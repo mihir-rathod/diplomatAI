@@ -1,12 +1,16 @@
 package com.diplomat.gateway.controller;
 
+import com.diplomat.gateway.model.ApiKeyRequest;
+import com.diplomat.gateway.service.DynamicModelFetcherService;
 import com.diplomat.gateway.service.RouterService;
+import com.diplomat.gateway.config.ModelRegistryProperties.ModelConfig;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
@@ -17,11 +21,27 @@ public class GatewayController {
 
     private final RouterService routerService;
     private final StringRedisTemplate redisTemplate;
+    private final DynamicModelFetcherService modelFetcherService;
 
     @Autowired
-    public GatewayController(RouterService routerService, StringRedisTemplate redisTemplate) {
+    public GatewayController(RouterService routerService, StringRedisTemplate redisTemplate,
+            DynamicModelFetcherService modelFetcherService) {
         this.routerService = routerService;
         this.redisTemplate = redisTemplate;
+        this.modelFetcherService = modelFetcherService;
+    }
+
+    @PostMapping("/models")
+    public ResponseEntity<List<ModelConfig>> fetchProviderModels(@RequestBody ApiKeyRequest request) {
+        if (request.getProvider() == null || request.getApiKey() == null) {
+            return ResponseEntity.badRequest().build();
+        }
+
+        // Dynamically fetch models from the provider using the provided key
+        List<ModelConfig> availableModels = modelFetcherService.fetchModels(
+                request.getProvider(), request.getApiKey());
+
+        return ResponseEntity.ok(availableModels);
     }
 
     @PostMapping

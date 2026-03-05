@@ -48,10 +48,50 @@ if "metrics" not in st.session_state:
         "qc_passed": True,
         "latency_ms": 0
     }
+if "available_models" not in st.session_state:
+    st.session_state.available_models = []
+if "api_key_configured" not in st.session_state:
+    st.session_state.api_key_configured = False
 
 # --- SIDEBAR: Transparency Panel ---
 with st.sidebar:
-    st.title("🔍 Transparency Panel")
+    st.title("🔍 diplomatAI Control")
+    
+    with st.expander("🔑 API Key & Model Configuration", expanded=not st.session_state.api_key_configured):
+        st.markdown("Fetch available dynamic models:")
+        provider = st.selectbox("Provider", ["OpenAI", "Gemini"])
+        api_key_input = st.text_input("API Key", type="password", help="This is sent securely to the Gateway")
+        
+        if st.button("Fetch Models"):
+            if not api_key_input:
+                st.warning("Please enter an API Key.")
+            else:
+                with st.spinner("Fetching from Gateway..."):
+                    try:
+                        # Call the Gateway's dynamic model endpoint
+                        response = requests.post(
+                            f"{GATEWAY_URL}/models", 
+                            json={"provider": provider, "apiKey": api_key_input},
+                            timeout=10
+                        )
+                        response.raise_for_status()
+                        models = response.json()
+                        
+                        st.session_state.available_models = models
+                        st.session_state.api_key_configured = True
+                        st.success(f"Successfully loaded {len(models)} models!")
+                        
+                    except requests.exceptions.RequestException as e:
+                        st.error(f"Failed to reach Gateway: {e}")
+                        
+        if st.session_state.api_key_configured and st.session_state.available_models:
+            st.markdown("### Loaded Models")
+            for m in st.session_state.available_models:
+                st.caption(f"• **{m['name']}** (`{m['id']}`)")
+                
+    st.divider()
+
+    st.subheader("Transparency Panel")
     st.markdown("Real-time metrics for the last request.")
     
     st.subheader("Routing & Cache")
