@@ -1,0 +1,42 @@
+models:
+  - id: llama3
+    name: "Llama 3 8B"
+    provider: ollama
+    endpoint: "http://localhost:11434/api/generate"
+    apiKey: "" # Local models don't need a key
+    timeoutMs: 15000
+    capabilities:
+      - general_chat
+      - reasoning
+    fallbackId: mistral
+
+  - id: mistral
+    name: "Mistral 7B"
+    provider: ollama
+    endpoint: "http://localhost:11434/api/generate"
+    apiKey: ""
+    timeoutMs: 10000
+    capabilities:
+      - general_chat
+      - fast_response
+    fallbackId: default
+
+  - id: deepseek-coder
+    name: "DeepSeek Coder"
+    provider: ollama
+    endpoint: "http://localhost:11434/api/generate"
+    apiKey: ""
+    timeoutMs: 30000
+    capabilities:
+      - coding
+      - technical
+    fallbackId: llama3
+
+  - id: default
+    name: "Safe Fallback Model"
+    provider: internal
+    endpoint: "internal"
+    timeoutMs: 5000
+    capabilities:
+      - fallback
+    fallbackId: none
