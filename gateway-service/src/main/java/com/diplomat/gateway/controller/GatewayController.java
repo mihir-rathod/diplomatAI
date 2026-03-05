@@ -3,6 +3,8 @@ package com.diplomat.gateway.controller;
 import com.diplomat.gateway.model.ApiKeyRequest;
 import com.diplomat.gateway.service.DynamicModelFetcherService;
 import com.diplomat.gateway.service.RouterService;
+import com.diplomat.gateway.client.ProviderClient;
+import com.diplomat.gateway.config.ModelRegistryProperties;
 import com.diplomat.gateway.config.ModelRegistryProperties.ModelConfig;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -22,13 +24,19 @@ public class GatewayController {
     private final RouterService routerService;
     private final StringRedisTemplate redisTemplate;
     private final DynamicModelFetcherService modelFetcherService;
+    private final ProviderClient providerClient;
+    private final ModelRegistryProperties modelRegistry;
 
     @Autowired
     public GatewayController(RouterService routerService, StringRedisTemplate redisTemplate,
-            DynamicModelFetcherService modelFetcherService) {
+            DynamicModelFetcherService modelFetcherService,
+            ProviderClient providerClient,
+            ModelRegistryProperties modelRegistry) {
         this.routerService = routerService;
         this.redisTemplate = redisTemplate;
         this.modelFetcherService = modelFetcherService;
+        this.providerClient = providerClient;
+        this.modelRegistry = modelRegistry;
     }
 
     @PostMapping("/models")
@@ -73,20 +81,33 @@ public class GatewayController {
         metrics.put("cache_hit", false);
         metrics.put("model_routed", selectedModelId);
 
-        // TODO: (Next Phase) Implement restTemplate/webClient call to the actual LLM
-        // via Resilience4j
-        // TODO: (Next Phase) Implement restTemplate/webClient call to Quality Check
-        // Python Service
+        // 3. Fallback tracking & Call Execution
+        ModelConfig config = modelRegistry.getModelsAsMap().get(selectedModelId);
+        if (config == null) {
+            config = modelRegistry.getModelsAsMap().get("default");
+        }
 
-        // --- Temporary Mock Answer for initial integration ---
-        String generatedAnswer = "This is a temporary mocked response from the Java Gateway. You asked: " + prompt
-                + ". I routed this to: " + selectedModelId;
+        String generatedAnswer;
+        try {
+            // This calls the Resilience4j RateLimited Client
+            generatedAnswer = providerClient.callModel(prompt, config);
+        } catch (Exception e) {
+            // Absolute worst-case scenario where primary and ALL fallbacks crashed
+            generatedAnswer = "System Error: The gateway could not reach any models or fallbacks. Reason: "
+                    + e.getMessage();
+        }
 
-        // 3. Save to Memory for 1 hour
+        // Did we hit a fallback? We can analyze the answer internally for this
+        // prototype.
+        boolean fallbackTriggered = generatedAnswer.contains("Fallback");
+
+        // TODO: (Next Phase) Implement Quality Check Python Service Call
+
+        // 4. Save to Memory for 1 hour
         redisTemplate.opsForValue().set("prompt:" + prompt, generatedAnswer, 1, TimeUnit.HOURS);
 
         response.setAnswer(generatedAnswer);
-        metrics.put("fallback_triggered", false);
+        metrics.put("fallback_triggered", fallbackTriggered);
         metrics.put("qc_score", 95); // mocked
         metrics.put("qc_passed", true); // mocked
         metrics.put("latency_ms", System.currentTimeMillis() - startTime);
