@@ -24,18 +24,9 @@ public class ProviderClient {
         this.registryProperties = registryProperties;
     }
 
-    /**
-     * Sends the prompt to the specified model.
-     * Wrapped in Resilience4j RateLimiter & CircuitBreaker.
-     * If 429 occurs (or it crashes), it actively reroutes to the fallback method.
-     */
     @RateLimiter(name = "llmRateLimiter", fallbackMethod = "fallbackToBackupModel")
     @CircuitBreaker(name = "llmCircuitBreaker", fallbackMethod = "fallbackToBackupModel")
     public String callModel(String prompt, ModelConfig config) {
-
-        // This is a simplified mock call structure.
-        // In a full implementation, you'd branch by config.getProvider() (e.g. format
-        // for OpenAI vs Ollama)
 
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
@@ -49,24 +40,18 @@ public class ProviderClient {
 
         HttpEntity<Map<String, Object>> request = new HttpEntity<>(body, headers);
 
-        // Simulated HTTP Call (since we don't have local Ollama running yet)
+        // Internal provider is the terminal fallback — no external call needed
         if (config.getProvider().equalsIgnoreCase("internal")) {
             return "Internal Gateway Fallback activated. Safe response served.";
         }
 
-        // We throw an exception here to simulate a Rate Limit / 429 hit for testing the
-        // fallback!
-        throw new RuntimeException("429 Too Many Requests - Simulated Quota Exceeded for " + config.getId());
-
+        // TODO: Replace with actual HTTP call once LLM providers are connected
         // return restTemplate.postForObject(config.getEndpoint(), request,
         // String.class);
+        throw new RuntimeException("429 Too Many Requests - Simulated Quota Exceeded for " + config.getId());
     }
 
-    /**
-     * The highly-available Fallback Architecture.
-     * If the primary model fails or gets Rate-Limited, this method is automatically
-     * invoked.
-     */
+    // Resilience4j invokes this when the primary model fails or gets rate-limited
     public String fallbackToBackupModel(String prompt, ModelConfig originalConfig, Throwable t) {
         String fallbackId = originalConfig.getFallbackId();
 
@@ -79,8 +64,6 @@ public class ProviderClient {
             return "Error: Defined fallback model '" + fallbackId + "' not found in registry.";
         }
 
-        // Recursively call the backup model.
-        // It's safe because if the fallback fails, it triggers ITS OWN fallback!
         System.out.println("RATE LIMIT OR FAILURE DETECTED: " + originalConfig.getId());
         System.out.println("REROUTING TO FALLBACK: " + fallbackConfig.getId());
 

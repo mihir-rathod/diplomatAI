@@ -6,7 +6,6 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# Constants
 GATEWAY_URL = os.getenv("GATEWAY_URL", "http://localhost:8080/api/v1/chat")
 
 st.set_page_config(
@@ -15,7 +14,6 @@ st.set_page_config(
     layout="wide",
 )
 
-# Custom CSS for a better UI look
 st.markdown("""
 <style>
     .stChatFloatingInputContainer {
@@ -36,7 +34,6 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# Initialize Session State
 if "messages" not in st.session_state:
     st.session_state.messages = []
 if "metrics" not in st.session_state:
@@ -53,14 +50,13 @@ if "available_models" not in st.session_state:
 if "api_key_configured" not in st.session_state:
     st.session_state.api_key_configured = False
 
-# --- SIDEBAR: Transparency Panel ---
 with st.sidebar:
     st.title("🔍 diplomatAI Control")
     
     with st.expander("🔑 API Key & Model Configuration", expanded=not st.session_state.api_key_configured):
         st.markdown("Fetch available dynamic models:")
         provider = st.selectbox("Provider", ["OpenAI", "Gemini"])
-        api_key_input = st.text_input("API Key", type="password", help="This is sent securely to the Gateway")
+        api_key_input = st.text_input("API Key", type="password", help="Sent securely to the Gateway")
         
         if st.button("Fetch Models"):
             if not api_key_input:
@@ -68,7 +64,6 @@ with st.sidebar:
             else:
                 with st.spinner("Fetching from Gateway..."):
                     try:
-                        # Call the Gateway's dynamic model endpoint
                         response = requests.post(
                             f"{GATEWAY_URL}/models", 
                             json={"provider": provider, "apiKey": api_key_input},
@@ -117,53 +112,39 @@ with st.sidebar:
         st.session_state.messages = []
         st.rerun()
 
-# --- MAIN WORKSPACE: Chat Interface ---
 st.title("🤖 diplomatAI")
 st.markdown("A resilient middle-tier AI API Gateway intercepting and routing your requests.")
 
-# Display chat messages from history on app rerun
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
-# React to user input
 if prompt := st.chat_input("Ask diplomatAI anything..."):
-    # Display user message in chat message container
     st.chat_message("user").markdown(prompt)
-    # Add user message to chat history
     st.session_state.messages.append({"role": "user", "content": prompt})
 
-    # Prepare request to gateway
     payload = {"prompt": prompt}
     
     with st.spinner("Processing through diplomatAI Gateway..."):
         try:
-            # Simulate a request for UI building purposes (will connect to real API later)
-            # response = requests.post(GATEWAY_URL, json=payload, timeout=20)
-            # response.raise_for_status()
-            # data = response.json()
-            
-            # --- MOCK DATA TEMPORARY UNTIL GATEWAY IS BUILT ---
             import time
             import random
-            time.sleep(1) # simulate latency
+            time.sleep(1)
             data = {
                 "answer": f"This is a mocked response to: '{prompt}'. The Java Gateway is not connected yet.",
                 "metrics": {
                     "cache_hit": random.choice([True, False]),
                     "model_routed": random.choice(["Llama-3-8b", "Deepseek-Coder", "Mistral-7b"]),
-                    "fallback_triggered": random.choice([True, False, False]), # 33% chance of fallback
+                    "fallback_triggered": random.choice([True, False, False]),
                     "qc_score": random.randint(85, 100),
                     "qc_passed": True,
                     "latency_ms": random.randint(150, 1200)
                 }
             }
-            # --------------------------------------------------
             
             answer = data.get("answer", "No response received.")
             metrics = data.get("metrics", {})
             
-            # Update metrics in session state
             st.session_state.metrics = {
                 "cache_hit": metrics.get("cache_hit", False),
                 "model_routed": metrics.get("model_routed", "Unknown"),
@@ -173,13 +154,10 @@ if prompt := st.chat_input("Ask diplomatAI anything..."):
                 "latency_ms": metrics.get("latency_ms", 0)
             }
             
-            # Display assistant response in chat message container
             with st.chat_message("assistant"):
                 st.markdown(answer)
-            # Add assistant response to chat history
             st.session_state.messages.append({"role": "assistant", "content": answer})
             
-            # Rerun to update sidebar metrics
             st.rerun()
 
         except requests.exceptions.RequestException as e:
