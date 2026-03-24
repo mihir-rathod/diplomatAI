@@ -3,7 +3,7 @@ models:
     name: "Llama 3 8B"
     provider: ollama
     endpoint: "http://localhost:11434/api/generate"
-    apiKey: "" # Local models don't need a key
+    apiKey: ""
     timeoutMs: 15000
     capabilities:
       - general_chat
@@ -33,7 +33,7 @@ models:
     fallbackId: llama3
 
   - id: default
-    name: "Safe Fallback Model"
+    name: "Safe Fallback"
     provider: internal
     endpoint: "internal"
     timeoutMs: 5000

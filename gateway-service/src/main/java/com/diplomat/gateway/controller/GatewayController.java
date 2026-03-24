@@ -4,6 +4,7 @@ import com.diplomat.gateway.model.ApiKeyRequest;
 import com.diplomat.gateway.service.DynamicModelFetcherService;
 import com.diplomat.gateway.service.RouterService;
 import com.diplomat.gateway.client.ProviderClient;
+import com.diplomat.gateway.client.QualityCheckClient;
 import com.diplomat.gateway.config.ModelRegistryProperties;
 import com.diplomat.gateway.config.ModelRegistryProperties.ModelConfig;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -11,6 +12,7 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -25,30 +27,101 @@ public class GatewayController {
     private final StringRedisTemplate redisTemplate;
     private final DynamicModelFetcherService modelFetcherService;
     private final ProviderClient providerClient;
+    private final QualityCheckClient qualityCheckClient;
     private final ModelRegistryProperties modelRegistry;
 
     @Autowired
     public GatewayController(RouterService routerService, StringRedisTemplate redisTemplate,
             DynamicModelFetcherService modelFetcherService,
             ProviderClient providerClient,
+            QualityCheckClient qualityCheckClient,
             ModelRegistryProperties modelRegistry) {
         this.routerService = routerService;
         this.redisTemplate = redisTemplate;
         this.modelFetcherService = modelFetcherService;
         this.providerClient = providerClient;
+        this.qualityCheckClient = qualityCheckClient;
         this.modelRegistry = modelRegistry;
     }
 
+    @GetMapping("/health")
+    public ResponseEntity<Map<String, Object>> health() {
+        Map<String, Object> status = new HashMap<>();
+        status.put("status", "up");
+        status.put("service", "gateway");
+
+        try {
+            redisTemplate.opsForValue().get("health-check");
+            status.put("redis", "connected");
+        } catch (Exception e) {
+            status.put("redis", "disconnected");
+        }
+
+        int registeredModels = modelRegistry.getModels() != null ? modelRegistry.getModels().size() : 0;
+        status.put("registered_models", registeredModels);
+
+        return ResponseEntity.ok(status);
+    }
+
     @PostMapping("/models")
-    public ResponseEntity<List<ModelConfig>> fetchProviderModels(@RequestBody ApiKeyRequest request) {
+    public ResponseEntity<?> fetchProviderModels(@RequestBody ApiKeyRequest request) {
         if (request.getProvider() == null || request.getApiKey() == null) {
-            return ResponseEntity.badRequest().build();
+            return ResponseEntity.badRequest().body(Map.of("error", "Provider and API key are required."));
+        }
+
+        if (!modelFetcherService.isProviderSupported(request.getProvider())) {
+            return ResponseEntity.badRequest().body(Map.of(
+                    "error", "Unsupported provider: " + request.getProvider(),
+                    "supported", DynamicModelFetcherService.getSupportedProviders()
+            ));
+        }
+
+        boolean keyValid = modelFetcherService.validateApiKey(request.getProvider(), request.getApiKey());
+        if (!keyValid) {
+            return ResponseEntity.status(401).body(Map.of(
+                    "error", "Invalid API key for provider: " + request.getProvider()
+            ));
         }
 
         List<ModelConfig> availableModels = modelFetcherService.fetchModels(
                 request.getProvider(), request.getApiKey());
 
+        // Add fetched models into the live registry so they become routable
+        if (modelRegistry.getModels() == null) {
+            modelRegistry.setModels(new ArrayList<>());
+        }
+        for (ModelConfig m : availableModels) {
+            boolean exists = modelRegistry.getModels().stream()
+                    .anyMatch(existing -> existing.getId().equals(m.getId()));
+            if (!exists) {
+                modelRegistry.getModels().add(m);
+            }
+        }
+
         return ResponseEntity.ok(availableModels);
+    }
+
+    @GetMapping("/models/registry")
+    public ResponseEntity<List<ModelConfig>> getRegistry() {
+        List<ModelConfig> models = modelRegistry.getModels();
+        return ResponseEntity.ok(models != null ? models : List.of());
+    }
+
+    @DeleteMapping("/models/registry/{modelId}")
+    public ResponseEntity<Map<String, String>> removeFromRegistry(@PathVariable String modelId) {
+        List<ModelConfig> models = modelRegistry.getModels();
+        if (models == null) {
+            return ResponseEntity.notFound().build();
+        }
+
+        boolean removed = models.removeIf(m -> m.getId().equals(modelId));
+        if (removed) {
+            Map<String, String> result = new HashMap<>();
+            result.put("status", "removed");
+            result.put("modelId", modelId);
+            return ResponseEntity.ok(result);
+        }
+        return ResponseEntity.notFound().build();
     }
 
     @PostMapping
@@ -96,13 +169,23 @@ public class GatewayController {
         // Detect if the response came from a fallback model
         boolean fallbackTriggered = generatedAnswer.contains("Fallback");
 
+        // Validate through the Quality Check service
+        Map<String, Object> qcResult = qualityCheckClient.validate(prompt, generatedAnswer);
+        boolean qcPassed = (boolean) qcResult.getOrDefault("qc_passed", true);
+        int qcScore = qcResult.get("qc_score") instanceof Number 
+                ? ((Number) qcResult.get("qc_score")).intValue() : 0;
+
+        if (!qcPassed) {
+            generatedAnswer = "Response blocked by quality check: " + qcResult.getOrDefault("reason", "Unknown");
+        }
+
         // Cache the response for 1 hour to prevent duplicate API charges
         redisTemplate.opsForValue().set("prompt:" + prompt, generatedAnswer, 1, TimeUnit.HOURS);
 
         response.setAnswer(generatedAnswer);
         metrics.put("fallback_triggered", fallbackTriggered);
-        metrics.put("qc_score", 95);
-        metrics.put("qc_passed", true);
+        metrics.put("qc_score", qcScore);
+        metrics.put("qc_passed", qcPassed);
         metrics.put("latency_ms", System.currentTimeMillis() - startTime);
 
         response.setMetrics(metrics);

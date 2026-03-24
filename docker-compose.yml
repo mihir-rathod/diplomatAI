@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   redis:
     image: redis:alpine
@@ -9,6 +7,59 @@ services:
     volumes:
       - redis_data:/data
     command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    networks:
+      - diplomat-net
+
+  gateway:
+    build: ./gateway-service
+    container_name: diplomat-gateway
+    ports:
+      - "8080:8080"
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      - SPRING_DATA_REDIS_HOST=redis
+      - SPRING_DATA_REDIS_PORT=6379
+      - QC_SERVICE_URL=http://quality-check:8000
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8080/api/v1/chat/health || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    networks:
+      - diplomat-net
+
+  quality-check:
+    build: ./quality-check-service
+    container_name: diplomat-qc
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    networks:
+      - diplomat-net
+
+  dashboard:
+    build: ./dashboard
+    container_name: diplomat-dashboard
+    ports:
+      - "8501:8501"
+    depends_on:
+      gateway:
+        condition: service_healthy
+    environment:
+      - GATEWAY_URL=http://gateway:8080/api/v1/chat
     networks:
       - diplomat-net
 

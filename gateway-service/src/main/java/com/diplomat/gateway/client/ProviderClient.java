@@ -45,10 +45,11 @@ public class ProviderClient {
             return "Internal Gateway Fallback activated. Safe response served.";
         }
 
-        // TODO: Replace with actual HTTP call once LLM providers are connected
-        // return restTemplate.postForObject(config.getEndpoint(), request,
-        // String.class);
-        throw new RuntimeException("429 Too Many Requests - Simulated Quota Exceeded for " + config.getId());
+        if (config.getEndpoint() != null && !config.getEndpoint().isEmpty()) {
+            return restTemplate.postForObject(config.getEndpoint(), request, String.class);
+        }
+
+        throw new RuntimeException("No endpoint configured for model: " + config.getId());
     }
 
     // Resilience4j invokes this when the primary model fails or gets rate-limited
