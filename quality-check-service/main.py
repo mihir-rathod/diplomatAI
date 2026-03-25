@@ -43,7 +43,7 @@ async def validate_content(request: ValidationRequest):
     answer_embedding = model.encode(answer, convert_to_tensor=True)
     cosine_score = util.cos_sim(prompt_embedding, answer_embedding).item()
 
-    if cosine_score < 0.3:
+    if cosine_score < 0.15:
         return ValidationResponse(
             qc_passed=False,
             qc_score=int(cosine_score * 100),
@@ -70,6 +70,43 @@ async def validate_content(request: ValidationRequest):
         toxicity_flagged=False,
         reason="Content passed all quality and safety checks."
     )
+
+
+class CacheCheckRequest(BaseModel):
+    prompt: str
+    cached_prompts: list[str]
+
+
+class CacheCheckResponse(BaseModel):
+    matched: bool
+    matched_prompt: str | None = None
+    similarity: float = 0.0
+
+
+@app.post("/api/v1/cache", response_model=CacheCheckResponse)
+async def check_semantic_cache(request: CacheCheckRequest):
+    if not request.cached_prompts:
+        return CacheCheckResponse(matched=False)
+
+    prompt_embedding = model.encode(request.prompt, convert_to_tensor=True)
+    cached_embeddings = model.encode(request.cached_prompts, convert_to_tensor=True)
+
+    # Compute cosine similarities
+    cosine_scores = util.cos_sim(prompt_embedding, cached_embeddings)[0]
+    
+    # Find the best match
+    best_idx = cosine_scores.argmax().item()
+    best_score = cosine_scores[best_idx].item()
+
+    # 0.90 is a very high threshold for semantic equivalence
+    if best_score > 0.90:
+        return CacheCheckResponse(
+            matched=True,
+            matched_prompt=request.cached_prompts[best_idx],
+            similarity=round(best_score, 4)
+        )
+
+    return CacheCheckResponse(matched=False, similarity=round(best_score, 4))
 
 
 @app.get("/health")

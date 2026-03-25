@@ -9,7 +9,7 @@ GATEWAY_URL = os.getenv("GATEWAY_URL", "http://localhost:8080/api/v1/chat")
 
 st.set_page_config(
     page_title="diplomatAI Dashboard",
-    page_icon="🤖",
+    page_icon="🌐",
     layout="wide",
 )
 
@@ -46,10 +46,10 @@ if "metrics" not in st.session_state:
     }
 
 with st.sidebar:
-    st.title("🔍 diplomatAI Control")
+    st.title("diplomatAI Control")
 
     # --- Add Provider & API Key ---
-    with st.expander("🔑 Add Provider", expanded=True):
+    with st.expander("Add Provider", expanded=True):
         provider = st.selectbox("Provider", ["OpenAI", "Gemini", "Anthropic", "Groq", "Mistral", "OpenRouter", "Together"])
         api_key_input = st.text_input("API Key", type="password", help="Validated against the provider before registering")
 
@@ -65,21 +65,21 @@ with st.sidebar:
                             timeout=15
                         )
                         if response.status_code == 401:
-                            st.error(f"❌ Invalid API key for {provider}. Please check and try again.")
+                            st.error(f"Invalid API key for {provider}. Please check and try again.")
                         elif response.status_code == 400:
                             error_data = response.json()
-                            st.error(f"❌ {error_data.get('error', 'Bad request')}")
+                            st.error(f"{error_data.get('error', 'Bad request')}")
                         else:
                             response.raise_for_status()
                             models = response.json()
-                            st.success(f"✅ Key verified! Registered {len(models)} models from {provider}.")
+                            st.success(f"Key verified! Registered {len(models)} models from {provider}.")
                     except requests.exceptions.RequestException as e:
                         st.error(f"Failed to reach Gateway: {e}")
 
     st.divider()
 
     # --- Model Registry Management ---
-    with st.expander("📋 Model Registry", expanded=False):
+    with st.expander("Model Registry", expanded=False):
         if st.button("Refresh Registry"):
             st.rerun()
 
@@ -100,7 +100,7 @@ with st.sidebar:
                     st.markdown(f"**{model['name']}** (`{model['id']}`)")
                     st.caption(f"Provider: {model.get('provider', '?')} | Key: {key_display}")
                 with col2:
-                    if st.button("🗑️", key=f"del_{model['id']}"):
+                    if st.button("Delete", key=f"del_{model['id']}"):
                         try:
                             del_resp = requests.delete(
                                 f"{GATEWAY_URL}/models/registry/{model['id']}", timeout=5
@@ -117,16 +117,16 @@ with st.sidebar:
     st.subheader("Transparency Panel")
     m = st.session_state.metrics
 
-    cache_status = "✅ Hit" if m["cache_hit"] else "❌ Miss"
+    cache_status = "Hit" if m["cache_hit"] else "Miss"
     st.markdown(f"**Cache:** {cache_status}")
     st.markdown(f"**Routed Model:** `{m['model_routed']}`")
 
-    fallback_status = "⚠️ Yes" if m["fallback_triggered"] else "✅ No"
+    fallback_status = "Yes" if m["fallback_triggered"] else "No"
     st.markdown(f"**Fallback:** {fallback_status}")
 
     st.divider()
 
-    qc_status = "✅ Pass" if m["qc_passed"] else "❌ Fail"
+    qc_status = "Pass" if m["qc_passed"] else "Fail"
     st.markdown(f"**QC:** {qc_status} (Score: {m['qc_score']}/100)")
     st.markdown(f"**Latency:** `{m['latency_ms']} ms`")
 
@@ -134,7 +134,7 @@ with st.sidebar:
         st.session_state.messages = []
         st.rerun()
 
-st.title("🤖 diplomatAI")
+st.title("diplomatAI")
 st.markdown("A resilient middle-tier AI API Gateway intercepting and routing your requests.")
 
 for message in st.session_state.messages:
@@ -174,4 +174,4 @@ if prompt := st.chat_input("Ask diplomatAI anything..."):
         except requests.exceptions.RequestException as e:
             st.error(f"Gateway Error: {e}")
             with st.chat_message("assistant"):
-                st.markdown("⚠️ Couldn't reach the AI gateway. Please check if the services are running.")
+                st.markdown("Couldn't reach the AI gateway. Please check if the services are running.")

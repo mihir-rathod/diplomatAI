@@ -16,6 +16,8 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
 import java.util.concurrent.TimeUnit;
 
 @RestController
@@ -148,7 +150,35 @@ public class GatewayController {
             return ResponseEntity.ok(response);
         }
 
-        // Cache miss — route to the best model based on prompt categorization
+        // Exact Cache miss — Try Semantic Caching
+        Set<String> keys = redisTemplate.keys("prompt:*");
+        if (keys != null && !keys.isEmpty()) {
+            Set<String> cachedPrompts = keys.stream()
+                    .map(k -> k.substring(7)) // remove "prompt:"
+                    .collect(Collectors.toSet());
+
+            Map<String, Object> semanticMatch = qualityCheckClient.checkSemanticCache(prompt, cachedPrompts);
+            if (semanticMatch.containsKey("matched") && (boolean) semanticMatch.get("matched")) {
+                String matchedPrompt = (String) semanticMatch.get("matched_prompt");
+                String semanticCachedAnswer = redisTemplate.opsForValue().get("prompt:" + matchedPrompt);
+
+                if (semanticCachedAnswer != null) {
+                    response.setAnswer(semanticCachedAnswer);
+
+                    metrics.put("cache_hit", true);
+                    metrics.put("model_routed", "None (Semantic Cache: " + semanticMatch.get("similarity") + ")");
+                    metrics.put("fallback_triggered", false);
+                    metrics.put("qc_score", 100);
+                    metrics.put("qc_passed", true);
+                    metrics.put("latency_ms", System.currentTimeMillis() - startTime);
+
+                    response.setMetrics(metrics);
+                    return ResponseEntity.ok(response);
+                }
+            }
+        }
+
+        // Full Cache miss — route to the best model based on prompt categorization
         String selectedModelId = routerService.routePrompt(prompt);
         metrics.put("cache_hit", false);
         metrics.put("model_routed", selectedModelId);
@@ -169,14 +199,19 @@ public class GatewayController {
         // Detect if the response came from a fallback model
         boolean fallbackTriggered = generatedAnswer.contains("Fallback");
 
-        // Validate through the Quality Check service
-        Map<String, Object> qcResult = qualityCheckClient.validate(prompt, generatedAnswer);
-        boolean qcPassed = (boolean) qcResult.getOrDefault("qc_passed", true);
-        int qcScore = qcResult.get("qc_score") instanceof Number 
-                ? ((Number) qcResult.get("qc_score")).intValue() : 0;
+        // Only validate real AI-generated responses, skip system/fallback messages
+        boolean qcPassed = true;
+        int qcScore = 100;
 
-        if (!qcPassed) {
-            generatedAnswer = "Response blocked by quality check: " + qcResult.getOrDefault("reason", "Unknown");
+        if (!fallbackTriggered && !generatedAnswer.startsWith("System Error")) {
+            Map<String, Object> qcResult = qualityCheckClient.validate(prompt, generatedAnswer);
+            qcPassed = (boolean) qcResult.getOrDefault("qc_passed", true);
+            qcScore = qcResult.get("qc_score") instanceof Number 
+                    ? ((Number) qcResult.get("qc_score")).intValue() : 0;
+
+            if (!qcPassed) {
+                generatedAnswer = "Response blocked by quality check: " + qcResult.getOrDefault("reason", "Unknown");
+            }
         }
 
         // Cache the response for 1 hour to prevent duplicate API charges

@@ -43,4 +43,24 @@ public class QualityCheckClient {
         fallback.put("reason", "QC service unavailable, defaulting to pass.");
         return fallback;
     }
+
+    @SuppressWarnings("unchecked")
+    public Map<String, Object> checkSemanticCache(String prompt, java.util.Set<String> cachedPrompts) {
+        if (cachedPrompts == null || cachedPrompts.isEmpty()) {
+            return java.util.Collections.emptyMap();
+        }
+        
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("prompt", prompt);
+        payload.put("cached_prompts", cachedPrompts);
+
+        try {
+            Map<String, Object> result = restTemplate.postForObject(
+                    qcServiceUrl + "/api/v1/cache", payload, Map.class);
+            return result != null ? result : java.util.Collections.emptyMap();
+        } catch (Exception e) {
+            System.out.println("Semantic Cache check failed: " + e.getMessage());
+            return java.util.Collections.emptyMap();
+        }
+    }
 }
