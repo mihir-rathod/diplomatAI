@@ -11,6 +11,9 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.core.type.TypeReference;
+import jakarta.annotation.PostConstruct;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -44,6 +47,48 @@ public class GatewayController {
         this.providerClient = providerClient;
         this.qualityCheckClient = qualityCheckClient;
         this.modelRegistry = modelRegistry;
+    }
+
+    private final ObjectMapper objectMapper = new ObjectMapper();
+    private static final String REGISTRY_KEY = "registry:models";
+
+    @PostConstruct
+    public void loadRegistryFromRedis() {
+        try {
+            String json = redisTemplate.opsForValue().get(REGISTRY_KEY);
+            if (json != null && !json.isEmpty()) {
+                List<ModelConfig> persisted = objectMapper.readValue(
+                        json, new TypeReference<List<ModelConfig>>() {});
+                if (modelRegistry.getModels() == null) {
+                    modelRegistry.setModels(new ArrayList<>());
+                }
+                for (ModelConfig m : persisted) {
+                    boolean exists = modelRegistry.getModels().stream()
+                            .anyMatch(e -> e.getId().equals(m.getId()));
+                    if (!exists) {
+                        modelRegistry.getModels().add(m);
+                    }
+                }
+                System.out.println("Loaded " + persisted.size() + " models from Redis.");
+            }
+        } catch (Exception e) {
+            System.out.println("Failed to load registry from Redis: " + e.getMessage());
+        }
+    }
+
+    private void persistRegistry() {
+        try {
+            List<ModelConfig> models = modelRegistry.getModels();
+            if (models == null) models = List.of();
+            // Only persist non-internal models
+            List<ModelConfig> toSave = models.stream()
+                    .filter(m -> !"internal".equalsIgnoreCase(m.getProvider()))
+                    .collect(Collectors.toList());
+            String json = objectMapper.writeValueAsString(toSave);
+            redisTemplate.opsForValue().set(REGISTRY_KEY, json);
+        } catch (Exception e) {
+            System.out.println("Failed to persist registry to Redis: " + e.getMessage());
+        }
     }
 
     @GetMapping("/health")
@@ -100,6 +145,7 @@ public class GatewayController {
             }
         }
 
+        persistRegistry();
         return ResponseEntity.ok(availableModels);
     }
 
@@ -118,6 +164,7 @@ public class GatewayController {
 
         boolean removed = models.removeIf(m -> m.getId().equals(modelId));
         if (removed) {
+            persistRegistry();
             Map<String, String> result = new HashMap<>();
             result.put("status", "removed");
             result.put("modelId", modelId);

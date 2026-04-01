@@ -50,10 +50,13 @@ with st.sidebar:
 
     # --- Add Provider & API Key ---
     with st.expander("Add Provider", expanded=True):
-        provider = st.selectbox("Provider", ["OpenAI", "Gemini", "Anthropic", "Groq", "Mistral", "OpenRouter", "Together"])
-        api_key_input = st.text_input("API Key", type="password", help="Validated against the provider before registering")
+        with st.form("register_form", clear_on_submit=True):
+            provider = st.selectbox("Provider", ["OpenAI", "Gemini", "Anthropic", "Groq", "Mistral", "OpenRouter", "Together"])
+            api_key_input = st.text_input("API Key", type="password",
+                                          help="Validated against the provider before registering")
+            submitted = st.form_submit_button("Register Models")
 
-        if st.button("Register Models"):
+        if submitted:
             if not api_key_input:
                 st.warning("Please enter an API Key.")
             else:
