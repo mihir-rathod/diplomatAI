@@ -1,12 +1,10 @@
 from fastapi import FastAPI
 from pydantic import BaseModel
 from sentence_transformers import SentenceTransformer, util
-from better_profanity import profanity
 
 app = FastAPI(title="diplomatAI Quality Check Service")
 
 model = SentenceTransformer("all-MiniLM-L6-v2")
-profanity.load_censor_words()
 
 
 class ValidationRequest(BaseModel):
@@ -26,18 +24,6 @@ class ValidationResponse(BaseModel):
 async def validate_content(request: ValidationRequest):
     prompt = request.prompt
     answer = request.answer
-
-    prompt_toxic = profanity.contains_profanity(prompt)
-    answer_toxic = profanity.contains_profanity(answer)
-
-    if prompt_toxic or answer_toxic:
-        return ValidationResponse(
-            qc_passed=False,
-            qc_score=15,
-            relevance_score=0.0,
-            toxicity_flagged=True,
-            reason="Toxicity detected in prompt or answer."
-        )
 
     prompt_embedding = model.encode(prompt, convert_to_tensor=True)
     answer_embedding = model.encode(answer, convert_to_tensor=True)

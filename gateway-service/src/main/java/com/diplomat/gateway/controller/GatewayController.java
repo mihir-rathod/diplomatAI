@@ -91,6 +91,20 @@ public class GatewayController {
         }
     }
 
+    @DeleteMapping("/cache")
+    public ResponseEntity<Map<String, Object>> clearCache() {
+        Set<String> keys = redisTemplate.keys("prompt:*");
+        long deleted = 0;
+        if (keys != null && !keys.isEmpty()) {
+            deleted = keys.size();
+            redisTemplate.delete(keys);
+        }
+        Map<String, Object> result = new HashMap<>();
+        result.put("status", "cleared");
+        result.put("entries_removed", deleted);
+        return ResponseEntity.ok(result);
+    }
+
     @GetMapping("/health")
     public ResponseEntity<Map<String, Object>> health() {
         Map<String, Object> status = new HashMap<>();
