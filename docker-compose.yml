@@ -54,12 +54,12 @@ services:
     build: ./dashboard
     container_name: diplomat-dashboard
     ports:
-      - "8501:8501"
+      - "3000:3000"
     depends_on:
       gateway:
         condition: service_healthy
     environment:
-      - GATEWAY_URL=http://gateway:8080/api/v1/chat
+      - NEXT_PUBLIC_GATEWAY_URL=http://gateway:8080/api/v1/chat
     networks:
       - diplomat-net
 
