@@ -4,14 +4,12 @@
 ![React](https://img.shields.io/badge/React-19-blue?logo=react)
 ![Java](https://img.shields.io/badge/Java-25-orange?logo=openjdk)
 ![Spring Boot](https://img.shields.io/badge/Spring%20Boot-4.0-green?logo=springboot)
-![Python](https://img.shields.io/badge/Python-3.11-blue?logo=python)
-![FastAPI](https://img.shields.io/badge/FastAPI-0.104-teal?logo=fastapi)
 ![Redis](https://img.shields.io/badge/Redis-Alpine-red?logo=redis)
 ![Docker](https://img.shields.io/badge/Docker-Compose-blue?logo=docker)
 
 A resilient AI API Gateway that sits between your applications and LLM providers. It intercepts, caches, routes, validates, and fault-tolerates every AI request — so your infrastructure doesn't break when a provider does.
 
-Includes a beautiful ChatGPT-style dashboard built in Next.js 15 for API key management and direct model interaction.
+Includes a deeply optimized **3-Pane IDE-Style Dashboard** built in Next.js 15 for API key management, real-time rate limit tracking, and seamless model fallback interactions.
 
 ---
 
@@ -20,8 +18,8 @@ Includes a beautiful ChatGPT-style dashboard built in Next.js 15 for API key man
 | Problem | What happens | diplomatAI solution |
 |---------|-------------|---------------------|
 | **Cost trap** | An agent loops the same question 1,000× — you pay for 1,000 requests | **Semantic Caching** returns identical and similarly-worded prompts instantly at $0 |
-| **Rate limit crash** | Provider returns 429 — your system crashes | **Circuit breaker & Fallback Routing** silently reroutes to a fallback model |
-| **Hallucination risk** | Model returns toxic or irrelevant content | **Quality Check** scores every response with NLP before returning it |
+| **Rate limit crash** | Provider returns 429 — your system crashes | **Seamless Fallback Engine** traps errors and autonomously loops through priority models to ensure stability |
+| **Silent throttling** | API restricts token limits opaquely without alerting you | **Header Interception** tracks real-time limits natively and displays dynamic limit bars directly inside the IDE Dashboard |
 
 ---
 
@@ -34,23 +32,22 @@ graph TD
     
     subgraph Core Services
         GW -->|1. Exact Cache Check| Redis[(Redis \n :6379)]
-        GW -->|2. Semantic Cache Check| QC(Python QC Service \n :8000)
-        QC -.->|Sentence-BERT Match| GW
         GW -.->|On Cache Miss| Router{Intelligent Router}
+        Router -->|Fallback Loop Engine| Engine(Autonomous Fallback \n Model Looper)
+        Engine -->|Provider Dispatch| Fetcher
     end
 
     subgraph LLM Providers
-        Router -->|Fetch API| P1[Groq]
-        Router -->|Fetch API| P2[Gemini]
-        Router -->|Fetch API| P3[OpenAI, Mistral, Anthropic...]
+        Fetcher -->|Fetch API| P1[Groq]
+        Fetcher -->|Fetch API| P2[Gemini]
+        Fetcher -->|Fetch API| P3[OpenAI, Mistral, Anthropic...]
     end
     
-    P1 -.->|Raw Response| GW
-    P2 -.->|Raw Response| GW
+    P1 -.->|Interception: Limits & Usage| GW
+    P2 -.->|Interception: Limits & Usage| GW
     
-    GW -->|3. Validation Check| QC
-    QC -.->|NLP Score & Pass/Fail| GW
-    GW -->|4. Return & Cache| UI
+    GW -->|2. Error Check & Metric Mapping| GW
+    GW -->|3. Return & Cache| UI
     GW -.->|Write| Redis
 ```
 
@@ -68,7 +65,7 @@ graph TD
 | OpenRouter | ✅ Free models | `openrouter.ai/api/v1/models` |
 | Together AI | $5 free credit | `api.together.xyz/v1/models` |
 
-API keys are validated against the provider's real endpoint before registration.
+API keys are validated against the provider's real endpoint before dynamic registration.
 
 ---
 
@@ -90,7 +87,6 @@ docker compose up --build -d
 |---------|-----|
 | Next.js Dashboard | `http://localhost:3000` |
 | Gateway API | `http://localhost:8080/api/v1/chat` |
-| Quality Check API | `http://localhost:8000/docs` |
 | Redis | `localhost:6379` |
 
 ---
@@ -101,7 +97,14 @@ docker compose up --build -d
 ```
 POST /api/v1/chat
 Body: { "prompt": "your question", "modelId": "auto", "useCache": true }
-Returns: { "answer": "...", "metrics": { "cache_hit", "model_routed", "fallback_triggered", "qc_score" } }
+Returns: { 
+  "answer": "...", 
+  "metrics": { 
+     "cache_hit", "model_routed", "fallback_triggered", 
+     "original_model", "rate_limit_max", "rate_limit_remaining", 
+     "prompt_tokens", "completion_tokens", "total_tokens"
+  } 
+}
 ```
 
 ### Register Provider Models
@@ -121,7 +124,6 @@ DELETE /api/v1/chat/cache                    → Flush Redis Cache
 ### Health & Monitoring
 ```
 GET /api/v1/chat/health  → Gateway status + Redis connectivity
-GET /health              → Quality check service status
 ```
 
 ---
@@ -131,18 +133,16 @@ GET /health              → Quality check service status
 ```
 diplomatAI/
 ├── dashboard/                  # Multi-LLM Chat UI (Next.js 15, React 19)
-│   ├── app/                    # Routing & Pages
-│   ├── components/             # Sidebar, ChatWindow, etc.
+│   ├── app/                    # Routing & Resizable Layout
+│   ├── components/             # LeftSidebar (History), RightSidebar (API/Metrics), ChatWindow
 │   └── public/                 # Assets
 ├── gateway-service/            # Core Gateway API (Java 25 / Spring Boot 4)
 │   ├── src/main/java/com/diplomat/gateway/
-│   │   ├── controller/         # REST logic, API keys, Model fetch
-│   │   ├── client/             # External call orchestrator
-│   │   ├── service/            # Keyword routing algorithms
-│   │   └── config/             # ModelRegistryProperties
+│   │   ├── controller/         # REST logic, Fallback routing loops
+│   │   ├── client/             # External calls & Deep Header Interception
+│   │   ├── service/            # Intelligent routing
+│   │   └── config/             # Registry management
 │   └── src/main/resources/     
-├── quality-check-service/      # Validation & NLP Semantic cache (FastAPI)
-│   └── main.py                 # sentence-transformers based quality engine
 ├── docker-compose.yml          # Network & Container orchestration
 └── README.md
 ```
@@ -161,4 +161,4 @@ response = requests.post("https://api.openai.com/v1/chat/completions", ...)
 response = requests.post("http://localhost:8080/api/v1/chat", json={"prompt": "..."})
 ```
 
-The gateway handles routing, caching, fallback, and quality validation transparently.
+The gateway autonomously handles routing, caching, seamless fallback iteration, and limit tracking instantly.

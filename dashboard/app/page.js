@@ -196,7 +196,42 @@ export default function Home() {
     setTimeout(() => setToast(null), 5000); // 5 seconds
   };
 
+  const generateTitleForSession = async (firstPrompt, sessionId) => {
+    try {
+      const titlePrompt = `Generate a concise 3 to 5 word title for the following request. Return ONLY the string without quotes, markdown, or punctuation:\n\n${firstPrompt}`;
+      const res = await fetch(GATEWAY_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt: titlePrompt, modelId: "auto", useCache: false }),
+      });
+      const data = await res.json();
+      if (data.answer && !data.answer.toLowerCase().includes("system error") && !data.answer.toLowerCase().includes("error:")) {
+        let generatedTitle = data.answer.replace(/["'*`_]/g, '').trim();
+        if (generatedTitle.endsWith('.')) generatedTitle = generatedTitle.slice(0, -1);
+        
+        setSessions(prev => {
+          const updated = prev.map(s => {
+            if (s.id === sessionId) {
+              return { ...s, title: generatedTitle };
+            }
+            return s;
+          });
+          localStorage.setItem("diplomatAI_sessions", JSON.stringify(updated));
+          return updated;
+        });
+      }
+    } catch (err) {
+      console.error("Silent fail on background title generation", err);
+    }
+  };
+
   const handleSend = async (prompt, forceBypassCache = false) => {
+    const isFirstMessage = messages.length === 0;
+    
+    if (isFirstMessage) {
+      generateTitleForSession(prompt, currentSessionId);
+    }
+
     const userMsg = { role: "user", content: prompt };
     setMessages((prev) => [...prev, userMsg]);
     setLoading(true);

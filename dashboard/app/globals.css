@@ -386,12 +386,12 @@ html, body {
   font-size: 0.95rem;
   line-height: 1.5;
   color: var(--text-primary);
-  white-space: pre-wrap;
   word-wrap: break-word;
 }
 
 .message-content p {
   margin-bottom: 0.75rem;
+  white-space: pre-wrap;
 }
 
 .message-content p:last-child {
@@ -408,7 +408,8 @@ html, body {
 }
 
 .message-content li > p {
-  margin-bottom: 0.25rem;
+  margin-bottom: 0.5rem;
+  margin-top: 0;
 }
 
 .message-content code {
