@@ -84,8 +84,8 @@ async def check_semantic_cache(request: CacheCheckRequest):
     best_idx = cosine_scores.argmax().item()
     best_score = cosine_scores[best_idx].item()
 
-    # 0.90 is a very high threshold for semantic equivalence
-    if best_score > 0.90:
+    # 0.80 captures variations like "write bubble sort" vs "can you write me bubble sort"
+    if best_score > 0.80:
         return CacheCheckResponse(
             matched=True,
             matched_prompt=request.cached_prompts[best_idx],

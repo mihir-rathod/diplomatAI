@@ -70,18 +70,17 @@ public class DynamicModelFetcherService {
     public List<ModelConfig> fetchModels(String provider, String apiKey) {
         List<ModelConfig> dynamicModels = new ArrayList<>();
 
-        // TODO: Parse actual API responses to build model lists dynamically
         if ("openai".equalsIgnoreCase(provider)) {
             dynamicModels.add(createConfig("gpt-4o", "OpenAI GPT-4o", provider, apiKey,
                     "https://api.openai.com/v1/chat/completions", List.of("coding", "reasoning")));
             dynamicModels.add(createConfig("gpt-3.5-turbo", "OpenAI GPT-3.5 Turbo", provider, apiKey,
                     "https://api.openai.com/v1/chat/completions", List.of("fast_response", "general_chat")));
         } else if ("gemini".equalsIgnoreCase(provider)) {
-            dynamicModels.add(createConfig("gemini-1.5-pro", "Gemini 1.5 Pro", provider, apiKey,
-                    "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent",
+            dynamicModels.add(createConfig("gemini-1.5-pro-latest", "Gemini 1.5 Pro", provider, apiKey,
+                    "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro-latest:generateContent",
                     List.of("reasoning", "coding")));
-            dynamicModels.add(createConfig("gemini-1.5-flash", "Gemini 1.5 Flash", provider, apiKey,
-                    "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent",
+            dynamicModels.add(createConfig("gemini-1.5-flash-latest", "Gemini 1.5 Flash", provider, apiKey,
+                    "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent",
                     List.of("fast_response")));
         } else if ("anthropic".equalsIgnoreCase(provider)) {
             dynamicModels.add(createConfig("claude-3-5-sonnet", "Claude 3.5 Sonnet", provider, apiKey,
@@ -89,9 +88,9 @@ public class DynamicModelFetcherService {
             dynamicModels.add(createConfig("claude-3-haiku", "Claude 3 Haiku", provider, apiKey,
                     "https://api.anthropic.com/v1/messages", List.of("fast_response", "general_chat")));
         } else if ("groq".equalsIgnoreCase(provider)) {
-            dynamicModels.add(createConfig("llama-3.1-70b-versatile", "Llama 3.1 70B (Groq)", provider, apiKey,
+            dynamicModels.add(createConfig("llama-3.3-70b-versatile", "Llama 3.3 70B (Groq)", provider, apiKey,
                     "https://api.groq.com/openai/v1/chat/completions", List.of("general_chat", "reasoning")));
-            dynamicModels.add(createConfig("mixtral-8x7b-32768", "Mixtral 8x7B (Groq)", provider, apiKey,
+            dynamicModels.add(createConfig("llama-3.1-8b-instant", "Llama 3.1 8B Instant (Groq)", provider, apiKey,
                     "https://api.groq.com/openai/v1/chat/completions", List.of("fast_response", "coding")));
         } else if ("mistral".equalsIgnoreCase(provider)) {
             dynamicModels.add(createConfig("mistral-large-latest", "Mistral Large", provider, apiKey,
