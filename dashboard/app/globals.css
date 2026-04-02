@@ -49,10 +49,18 @@ html, body {
   width: var(--sidebar-width);
   min-width: var(--sidebar-width);
   background: var(--bg-sidebar);
-  border-right: 1px solid var(--border);
   display: flex;
   flex-direction: column;
-  overflow-y: auto;
+  overflow: hidden;
+  position: relative;
+}
+
+.sidebar.left {
+  border-right: 1px solid var(--border);
+}
+
+.sidebar.right {
+  border-left: 1px solid var(--border);
 }
 
 .sidebar-header {
@@ -242,6 +250,9 @@ html, body {
   display: flex;
   flex-direction: column;
   gap: 4px;
+  overflow-y: auto;
+  flex: 1;
+  padding-right: 4px;
 }
 
 .history-item {
@@ -370,11 +381,28 @@ html, body {
 .message-role.assistant { color: var(--success); }
 
 .message-content {
-  font-size: 0.9rem;
-  line-height: 1.6;
+  font-size: 0.95rem;
+  line-height: 1.5;
   color: var(--text-primary);
-  word-wrap: break-word;
   white-space: pre-wrap;
+  word-wrap: break-word;
+}
+
+.message-content p {
+  margin-bottom: 0.75rem;
+}
+
+.message-content p:last-child {
+  margin-bottom: 0;
+}
+
+.message-content ul, .message-content ol {
+  margin-bottom: 0.75rem;
+  padding-left: 1.5rem;
+}
+
+.message-content li {
+  margin-bottom: 0.25rem;
 }
 
 .message-content code {
@@ -482,10 +510,11 @@ html, body {
 .top-nav {
   padding: 12px 24px;
   display: flex;
-  justify-content: space-between;
   align-items: center;
+  justify-content: space-between;
   border-bottom: 1px solid var(--border);
   background: var(--bg-primary);
+  height: 56px;
 }
 
 .btn-icon {
@@ -579,3 +608,196 @@ html, body {
   border: 1px solid var(--border) !important;
   font-size: 0.85rem !important;
 }
+
+/* ─── Spinner ─── */
+.spinner {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.btn-secondary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-primary {
+  display: flex;
+  align-items: center;
+}
+
+/* ─── Typing Indicator ─── */
+.typing-indicator {
+  display: flex;
+  gap: 4px;
+  padding: 4px 0;
+}
+
+.typing-indicator span {
+  width: 6px;
+  height: 6px;
+  background-color: var(--text-muted);
+  border-radius: 50%;
+  animation: bounce 1.4s infinite ease-in-out both;
+}
+
+.typing-indicator span:nth-child(1) {
+  animation-delay: -0.32s;
+}
+
+.typing-indicator span:nth-child(2) {
+  animation-delay: -0.16s;
+}
+
+@keyframes bounce {
+  0%, 80%, 100% { transform: scale(0); }
+  40% { transform: scale(1); }
+}
+
+/* ─── Profile Placeholder ─── */
+.profile-placeholder {
+  margin-top: auto;
+  padding: 16px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.profile-placeholder:hover {
+  background: var(--bg-hover);
+}
+
+.profile-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--accent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: white;
+}
+
+.profile-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.profile-name {
+  font-size: 0.85rem;
+  font-weight: 500;
+}
+
+.profile-role {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+}
+
+/* ─── Provider Colors ─── */
+:root {
+  --provider-groq: #10b981;
+  --provider-mistral: #f97316;
+  --provider-gemini: #3b82f6;
+  --provider-openai: #6b7280;
+  --provider-anthropic: #d97706;
+  --provider-openrouter: #8b5cf6;
+  --provider-together: #ec4899;
+  --provider-cache: #6366f1;
+}
+
+/* ─── Toast Notification ─── */
+.toast-container {
+  position: absolute;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1000;
+  pointer-events: none;
+}
+
+.toast {
+  background: rgba(30, 30, 30, 0.85);
+  backdrop-filter: blur(8px);
+  border: 1px solid var(--border);
+  color: var(--text-primary);
+  padding: 10px 16px;
+  border-radius: 20px;
+  font-size: 0.85rem;
+  font-weight: 500;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+  animation: slideDownFade 0.3s cubic-bezier(0.16, 1, 0.3, 1), fadeOut 0.5s ease-in forwards 4.5s;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+@keyframes slideDownFade {
+  from { opacity: 0; transform: translate(-50%, -20px); }
+  to { opacity: 1; transform: translate(-50%, 0); }
+}
+
+@keyframes fadeOut {
+  to { opacity: 0; visibility: hidden; }
+}
+
+/* ─── Token Usage Bars ─── */
+.usage-bar-container {
+  width: 100%;
+  height: 6px;
+  background: var(--bg-input);
+  border-radius: 3px;
+  overflow: hidden;
+  margin-top: 4px;
+}
+
+.usage-bar-fill {
+  height: 100%;
+  transition: width 0.3s ease-out;
+}
+
+.provider-row {
+  margin-bottom: 8px;
+}
+
+.provider-stats {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.7rem;
+  color: var(--text-muted);
+}
+
+/* ─── Badges ─── */
+.badge-reroute {
+  display: inline-block;
+  background: rgba(245, 158, 11, 0.15);
+  color: var(--warning);
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  margin-bottom: 8px;
+  border: 1px solid rgba(245, 158, 11, 0.3);
+}
+
+.tag-groq { background: rgba(16, 185, 129, 0.15); color: var(--provider-groq); border: 1px solid rgba(16, 185, 129, 0.3); }
+.tag-mistral { background: rgba(249, 115, 22, 0.15); color: var(--provider-mistral); border: 1px solid rgba(249, 115, 22, 0.3); }
+.tag-gemini { background: rgba(59, 130, 246, 0.15); color: var(--provider-gemini); border: 1px solid rgba(59, 130, 246, 0.3); }
+.tag-openai { background: rgba(107, 114, 128, 0.15); color: var(--provider-openai); border: 1px solid rgba(107, 114, 128, 0.3); }
+.tag-anthropic { background: rgba(217, 119, 6, 0.15); color: var(--provider-anthropic); border: 1px solid rgba(217, 119, 6, 0.3); }
+.tag-openrouter { background: rgba(139, 92, 246, 0.15); color: var(--provider-openrouter); border: 1px solid rgba(139, 92, 246, 0.3); }
+.tag-together { background: rgba(236, 72, 153, 0.15); color: var(--provider-together); border: 1px solid rgba(236, 72, 153, 0.3); }
+.tag-cache { background: rgba(99, 102, 241, 0.15); color: var(--provider-cache); border: 1px solid rgba(99, 102, 241, 0.3); }

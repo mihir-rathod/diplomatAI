@@ -1,24 +1,31 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import Sidebar from "@/components/Sidebar";
 import ChatWindow from "@/components/ChatWindow";
 import ChatInput from "@/components/ChatInput";
+import LeftSidebar from "@/components/LeftSidebar";
+import RightSidebar from "@/components/RightSidebar";
 
 const GATEWAY_URL = process.env.NEXT_PUBLIC_GATEWAY_URL || "http://localhost:8080/api/v1/chat";
 
 export default function Home() {
   const [messages, setMessages] = useState([]);
   const [metrics, setMetrics] = useState({
-    cache_hit: false,
-    model_routed: "None",
+    cache_hit: null,
+    model_routed: "-",
     fallback_triggered: false,
-    qc_score: 0,
-    qc_passed: true,
+    original_model: null,
+    prompt_tokens: 0,
+    completion_tokens: 0,
+    total_tokens: 0,
+    provider: null,
     latency_ms: 0,
+    sessionUsage: {}
   });
+  const [toast, setToast] = useState(null);
   const [loading, setLoading] = useState(false);
-  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const [isLeftSidebarOpen, setIsLeftSidebarOpen] = useState(true);
+  const [isRightSidebarOpen, setIsRightSidebarOpen] = useState(true);
   const [selectedModel, setSelectedModel] = useState("auto");
   const [useCache, setUseCache] = useState(true);
   const [registryModels, setRegistryModels] = useState([]);
@@ -36,6 +43,7 @@ export default function Home() {
         if (parsed.length > 0) {
           setCurrentSessionId(parsed[0].id);
           setMessages(parsed[0].messages);
+          setMetrics(prev => ({...prev, sessionUsage: parsed[0].sessionUsage || {}}));
         } else {
           handleNewChat();
         }
@@ -60,25 +68,25 @@ export default function Home() {
             title = capitalized.replace(/[^a-zA-Z0-9 ]/g, "").trim() + (messages[0].content.split(" ").length > 4 ? "..." : "");
             if (!title) title = "New Chat";
           }
-          return { ...s, title, messages };
+          return { ...s, title, messages, sessionUsage: metrics.sessionUsage || {} };
         }
         return s;
       });
       localStorage.setItem("diplomatAI_sessions", JSON.stringify(updated));
       return updated;
     });
-  }, [messages]);
+  }, [messages, metrics.sessionUsage]);
 
   const handleNewChat = () => {
     setSessions(prev => {
-      const newSession = { id: Date.now().toString(), title: "New Chat", messages: [] };
+      const newSession = { id: Date.now().toString(), title: "New Chat", messages: [], sessionUsage: {} };
       const updated = [newSession, ...prev];
       localStorage.setItem("diplomatAI_sessions", JSON.stringify(updated));
       setCurrentSessionId(newSession.id);
       setMessages([]);
       setMetrics({
-        cache_hit: false, model_routed: "-", fallback_triggered: false,
-        qc_score: 0, qc_passed: true, latency_ms: 0
+        cache_hit: null, model_routed: "-", fallback_triggered: false,
+        prompt_tokens: 0, completion_tokens: 0, total_tokens: 0, provider: null, latency_ms: 0, sessionUsage: {}
       });
       return updated;
     });
@@ -92,14 +100,15 @@ export default function Home() {
         if (updated.length > 0) {
           setCurrentSessionId(updated[0].id);
           setMessages(updated[0].messages);
+          setMetrics(m => ({...m, sessionUsage: updated[0].sessionUsage || {}}));
         } else {
-          const newSession = { id: Date.now().toString(), title: "New Chat", messages: [] };
+          const newSession = { id: Date.now().toString(), title: "New Chat", messages: [], sessionUsage: {} };
           updated.push(newSession);
           setCurrentSessionId(newSession.id);
           setMessages([]);
           setMetrics({
             cache_hit: null, model_routed: "-", fallback_triggered: false,
-            qc_score: 0, qc_passed: true, latency_ms: 0
+            prompt_tokens: 0, completion_tokens: 0, total_tokens: 0, provider: null, latency_ms: 0, sessionUsage: {}
           });
         }
       }
@@ -115,7 +124,7 @@ export default function Home() {
       setMessages(session.messages);
       setMetrics({
         cache_hit: null, model_routed: "-", fallback_triggered: false,
-        qc_score: 0, qc_passed: true, latency_ms: 0
+        prompt_tokens: 0, completion_tokens: 0, total_tokens: 0, provider: null, latency_ms: 0, sessionUsage: session.sessionUsage || {}
       });
     }
   };
@@ -146,6 +155,11 @@ export default function Home() {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
+  const showToast = (message) => {
+    setToast(message);
+    setTimeout(() => setToast(null), 5000); // 5 seconds
+  };
+
   const handleSend = async (prompt, forceBypassCache = false) => {
     const userMsg = { role: "user", content: prompt };
     setMessages((prev) => [...prev, userMsg]);
@@ -170,14 +184,39 @@ export default function Home() {
       const answer = data.answer || "No response received.";
       const m = data.metrics || {};
 
+      const currentUsage = metrics.sessionUsage || {};
+      const provider = (m.provider || "cache").toLowerCase();
+      
+      const newUsage = { ...currentUsage };
+      if (m.total_tokens > 0) {
+        newUsage[provider] = (newUsage[provider] || 0) + m.total_tokens;
+      }
+
+      const currentLiveLimits = metrics.liveLimits || {};
+      const newLiveLimits = { ...currentLiveLimits };
+      if (m.rate_limit_max && m.rate_limit_max > 0) {
+        newLiveLimits[provider] = m.rate_limit_max;
+      }
+
       setMetrics({
         cache_hit: m.cache_hit || false,
         model_routed: m.model_routed || "Unknown",
         fallback_triggered: m.fallback_triggered || false,
-        qc_score: m.qc_score || 0,
-        qc_passed: m.qc_passed !== undefined ? m.qc_passed : true,
+        original_model: m.original_model,
+        prompt_tokens: m.prompt_tokens || 0,
+        completion_tokens: m.completion_tokens || 0,
+        total_tokens: m.total_tokens || 0,
+        provider: m.provider,
         latency_ms: m.latency_ms || 0,
+        sessionUsage: newUsage,
+        liveLimits: newLiveLimits
       });
+
+      // Show toast and switch model if rerouted
+      if (m.fallback_triggered && m.model_routed) {
+         showToast(`⚡ ${m.original_model || "Requested model"} was unavailable. Switched to ${m.model_routed}.`);
+         setSelectedModel(m.model_routed);
+      }
 
       setMessages((prev) => [
         ...prev, 
@@ -185,7 +224,10 @@ export default function Home() {
           role: "assistant", 
           content: answer, 
           model: m.model_routed || "Unknown",
-          isCachedHit: m.cache_hit || false
+          isCachedHit: m.cache_hit || false,
+          provider: m.provider,
+          wasRerouted: m.fallback_triggered,
+          originalModel: m.original_model
         }
       ]);
     } catch (err) {
@@ -208,12 +250,16 @@ export default function Home() {
 
   return (
     <div className="app-layout">
-      {isSidebarOpen && (
-        <Sidebar
-          metrics={metrics}
-          gatewayUrl={GATEWAY_URL}
-          onClearCache={handleClearCache}
-          onRegistryUpdate={fetchRegistry}
+      {toast && (
+        <div className="toast-container">
+          <div className="toast">
+            {toast}
+          </div>
+        </div>
+      )}
+      
+      {isLeftSidebarOpen && (
+        <LeftSidebar
           sessions={sessions}
           currentSessionId={currentSessionId}
           onNewChat={handleNewChat}
@@ -226,17 +272,27 @@ export default function Home() {
         <div className="top-nav">
           <button 
             className="btn btn-icon" 
-            onClick={() => setIsSidebarOpen(!isSidebarOpen)} 
-            title={isSidebarOpen ? "Close Sidebar" : "Open Sidebar"}
+            onClick={() => setIsLeftSidebarOpen(!isLeftSidebarOpen)} 
+            title={isLeftSidebarOpen ? "Close Context Menu" : "Open Context Menu"}
             style={{ fontSize: '1.2rem', padding: '4px 8px' }}
           >
-            {isSidebarOpen ? "◀" : "☰"}
+            {isLeftSidebarOpen ? "◀" : "☰"}
+          </button>
+          
+          <button 
+            className="btn btn-icon" 
+            onClick={() => setIsRightSidebarOpen(!isRightSidebarOpen)} 
+            title={isRightSidebarOpen ? "Close Inspector" : "Open Inspector"}
+            style={{ fontSize: '1.2rem', padding: '4px 8px' }}
+          >
+            {isRightSidebarOpen ? "▶" : "☷"}
           </button>
         </div>
         <ChatWindow 
           messages={messages} 
           chatEndRef={chatEndRef} 
           onRegenerate={(prompt) => handleSend(prompt, true)}
+          loading={loading}
         />
         <ChatInput 
           onSend={handleSend} 
@@ -248,6 +304,14 @@ export default function Home() {
           setUseCache={setUseCache}
         />
       </div>
+      {isRightSidebarOpen && (
+        <RightSidebar
+          metrics={metrics}
+          gatewayUrl={GATEWAY_URL}
+          onClearCache={handleClearCache}
+          onRegistryUpdate={fetchRegistry}
+        />
+      )}
     </div>
   );
 }

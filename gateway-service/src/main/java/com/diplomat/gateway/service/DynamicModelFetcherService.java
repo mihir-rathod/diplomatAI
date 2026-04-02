@@ -77,11 +77,11 @@ public class DynamicModelFetcherService {
             dynamicModels.add(createConfig("gpt-3.5-turbo", "OpenAI GPT-3.5 Turbo", provider, apiKey,
                     "https://api.openai.com/v1/chat/completions", List.of("fast_response", "general_chat")));
         } else if ("gemini".equalsIgnoreCase(provider)) {
-            dynamicModels.add(createConfig("gemini-1.5-pro", "Gemini 1.5 Pro", provider, apiKey,
-                    "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent",
+            dynamicModels.add(createConfig("gemini-1.5-pro-latest", "Gemini 1.5 Pro", provider, apiKey,
+                    "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro-latest:generateContent",
                     List.of("reasoning", "coding")));
-            dynamicModels.add(createConfig("gemini-1.5-flash", "Gemini 1.5 Flash", provider, apiKey,
-                    "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent",
+            dynamicModels.add(createConfig("gemini-1.5-flash-latest", "Gemini 1.5 Flash", provider, apiKey,
+                    "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent",
                     List.of("fast_response")));
         } else if ("anthropic".equalsIgnoreCase(provider)) {
             dynamicModels.add(createConfig("claude-3-5-sonnet", "Claude 3.5 Sonnet", provider, apiKey,

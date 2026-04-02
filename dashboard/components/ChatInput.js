@@ -47,7 +47,7 @@ export default function ChatInput({
             letterSpacing: '0.5px'
           }}
         >
-          <option value="auto" style={{ background: 'var(--bg-primary)', color: 'var(--text-primary)' }}>✓ Auto (Semantic Routing)</option>
+          <option value="auto" style={{ background: 'var(--bg-primary)', color: 'var(--text-primary)' }}>Auto (Semantic Routing)</option>
           {registryModels.map(m => (
             <option key={m.id} value={m.id} style={{ background: 'var(--bg-primary)', color: 'var(--text-primary)' }}>
               {m.name || m.id}

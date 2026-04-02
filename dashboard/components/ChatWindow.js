@@ -5,7 +5,7 @@ import remarkGfm from "remark-gfm";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { vscDarkPlus } from "react-syntax-highlighter/dist/esm/styles/prism";
 
-export default function ChatWindow({ messages, chatEndRef, onRegenerate }) {
+export default function ChatWindow({ messages, chatEndRef, onRegenerate, loading }) {
   if (messages.length === 0) {
     return (
       <div className="chat-window">
@@ -24,10 +24,15 @@ export default function ChatWindow({ messages, chatEndRef, onRegenerate }) {
           <div className="message-inner">
             <div className={`message-role ${msg.role}`}>
               {msg.role === "user" ? "You" : (
-                <>diplomatAI <span className="message-model-tag">{msg.model || ""}</span></>
+                <>diplomatAI <span className={`message-model-tag tag-${(msg.provider || "cache").toLowerCase()}`}>{msg.model || ""}</span></>
               )}
             </div>
             <div className="message-content">
+              {msg.role !== "user" && msg.wasRerouted && (
+                <div className="badge-reroute">
+                  ⚡ Rerouted from {msg.originalModel} → {msg.model}
+                </div>
+              )}
               {msg.role === "user" ? (
                 msg.content
               ) : (
@@ -77,6 +82,24 @@ export default function ChatWindow({ messages, chatEndRef, onRegenerate }) {
           </div>
         </div>
       ))}
+      
+      {loading && (
+        <div className="chat-message assistant generating">
+          <div className="message-inner">
+            <div className="message-role assistant">
+              diplomatAI
+            </div>
+            <div className="message-content">
+              <div className="typing-indicator">
+                <span></span>
+                <span></span>
+                <span></span>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+      
       <div ref={chatEndRef} />
     </div>
   );

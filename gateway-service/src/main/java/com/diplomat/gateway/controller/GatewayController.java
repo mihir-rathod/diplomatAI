@@ -5,6 +5,7 @@ import com.diplomat.gateway.service.DynamicModelFetcherService;
 import com.diplomat.gateway.service.RouterService;
 import com.diplomat.gateway.client.ProviderClient;
 import com.diplomat.gateway.client.QualityCheckClient;
+import com.diplomat.gateway.client.ModelCallResult;
 import com.diplomat.gateway.config.ModelRegistryProperties;
 import com.diplomat.gateway.config.ModelRegistryProperties.ModelConfig;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -195,24 +196,26 @@ public class GatewayController {
 
         long startTime = System.currentTimeMillis();
 
-        // Check Redis for a cached response before routing to any model
+        // ── 1. Check Redis for a cached response before routing ──
         if (request.isUseCache()) {
             String cachedAnswer = redisTemplate.opsForValue().get("prompt:" + prompt);
             if (cachedAnswer != null) {
                 response.setAnswer(cachedAnswer);
 
                 metrics.put("cache_hit", true);
-                metrics.put("model_routed", "None (Served from Cache)");
+                metrics.put("model_routed", "cache");
                 metrics.put("fallback_triggered", false);
-                metrics.put("qc_score", 100);
-                metrics.put("qc_passed", true);
+                metrics.put("prompt_tokens", 0);
+                metrics.put("completion_tokens", 0);
+                metrics.put("total_tokens", 0);
+                metrics.put("provider", "cache");
                 metrics.put("latency_ms", System.currentTimeMillis() - startTime);
 
                 response.setMetrics(metrics);
                 return ResponseEntity.ok(response);
             }
 
-            // Exact Cache miss — Try Semantic Caching
+            // Exact cache miss — try Semantic Caching via QC service
             Set<String> keys = redisTemplate.keys("prompt:*");
             if (keys != null && !keys.isEmpty()) {
                 Set<String> cachedPrompts = keys.stream()
@@ -228,10 +231,13 @@ public class GatewayController {
                         response.setAnswer(semanticCachedAnswer);
 
                         metrics.put("cache_hit", true);
-                        metrics.put("model_routed", "None (Semantic Cache: " + semanticMatch.get("similarity") + ")");
+                        metrics.put("model_routed", "semantic-cache");
                         metrics.put("fallback_triggered", false);
-                        metrics.put("qc_score", 100);
-                        metrics.put("qc_passed", true);
+                        metrics.put("semantic_similarity", semanticMatch.get("similarity"));
+                        metrics.put("prompt_tokens", 0);
+                        metrics.put("completion_tokens", 0);
+                        metrics.put("total_tokens", 0);
+                        metrics.put("provider", "cache");
                         metrics.put("latency_ms", System.currentTimeMillis() - startTime);
 
                         response.setMetrics(metrics);
@@ -241,7 +247,7 @@ public class GatewayController {
             }
         }
 
-        // Full Cache miss — route to the best model based on prompt categorization
+        // ── 2. Full cache miss — route to the best model ──
         String selectedModelId = request.getModelId();
         boolean manualSelection = true;
         
@@ -249,67 +255,82 @@ public class GatewayController {
             selectedModelId = routerService.routePrompt(prompt);
             manualSelection = false;
         }
-        
-        metrics.put("cache_hit", false);
-        metrics.put("model_routed", selectedModelId);
 
         ModelConfig config = modelRegistry.getModelsAsMap().get(selectedModelId);
         if (config == null) {
             config = modelRegistry.getModelsAsMap().get("default");
         }
 
-        String generatedAnswer;
-        try {
-            generatedAnswer = providerClient.callModel(prompt, config);
-        } catch (Exception e) {
-            if (manualSelection) {
-                System.err.println("Model " + selectedModelId + " explicitly failed: " + e.getMessage());
-                // Attempt an automatic fallback route instead of instantly failing
-                String fallbackId = routerService.routePrompt(prompt);
-                ModelConfig fallbackConfig = modelRegistry.getModelsAsMap().get(fallbackId);
-                if (fallbackConfig == null) {
-                    fallbackConfig = modelRegistry.getModelsAsMap().get("default");
+        // ── 3. Call the model with seamless fallback loop ──
+        ModelCallResult result = null;
+        java.util.Set<String> failedModels = new java.util.HashSet<>();
+        String currentModelId = selectedModelId;
+        boolean isFirstAttempt = true;
+
+        while (true) {
+            ModelConfig currentConfig = modelRegistry.getModelsAsMap().get(currentModelId);
+            if (currentConfig == null) {
+                currentConfig = modelRegistry.getModelsAsMap().get("default");
+            }
+
+            try {
+                result = providerClient.callModel(prompt, currentConfig);
+                
+                // If it returned an error (e.g. from internal fallback circuit breaker), treat as failure
+                if (result.getAnswer() != null && result.getAnswer().startsWith("Error:")) {
+                    throw new RuntimeException(result.getAnswer());
+                }
+
+                // If this wasn't the first attempt, mark it explicitly as rerouted
+                if (!isFirstAttempt) {
+                    result.setWasRerouted(true);
+                    result.setOriginalModelId(selectedModelId);
                 }
                 
-                try {
-                    generatedAnswer = providerClient.callModel(prompt, fallbackConfig);
-                    metrics.put("model_routed", fallbackId + " (Auto-Recovered)");
-                } catch (Exception e2) {
-                    generatedAnswer = "System Error: The gateway could not reach any models or fallbacks. Reason: "
-                            + e2.getMessage();
+                // Success! Break out of loop.
+                break;
+                
+            } catch (Exception e) {
+                System.err.println("Model " + currentModelId + " failed: " + e.getMessage());
+                failedModels.add(currentModelId);
+                
+                // Get next best model avoiding all failed ones so far
+                String nextModelId = routerService.getNextBestModel(failedModels, prompt);
+                
+                // If we ran out of fallbacks, return final error
+                if ("default".equals(nextModelId) || failedModels.contains(nextModelId)) {
+                    result = ModelCallResult.error(
+                        "System Error: The gateway could not reach any models. Reason: " + e.getMessage(),
+                        selectedModelId);
+                    break;
                 }
-            } else {
-                generatedAnswer = "System Error: The gateway could not reach any models or fallbacks. Reason: "
-                        + e.getMessage();
+                
+                currentModelId = nextModelId;
+                isFirstAttempt = false;
             }
         }
 
-        // Detect if the response came from a fallback model
-        boolean fallbackTriggered = generatedAnswer.contains("Fallback");
-
-        // Only validate real AI-generated responses, skip system/fallback messages
-        boolean qcPassed = true;
-        int qcScore = 100;
-
-        if (!fallbackTriggered && !generatedAnswer.startsWith("System Error")) {
-            Map<String, Object> qcResult = qualityCheckClient.validate(prompt, generatedAnswer);
-            qcPassed = (boolean) qcResult.getOrDefault("qc_passed", true);
-            qcScore = qcResult.get("qc_score") instanceof Number 
-                    ? ((Number) qcResult.get("qc_score")).intValue() : 0;
-
-            if (!qcPassed) {
-                generatedAnswer = "Response blocked by quality check: " + qcResult.getOrDefault("reason", "Unknown");
-            }
+        // ── 4. Cache the response ──
+        if (!result.getAnswer().startsWith("System Error") && !result.getAnswer().startsWith("Error:")) {
+            redisTemplate.opsForValue().set("prompt:" + prompt, result.getAnswer(), 1, TimeUnit.HOURS);
         }
 
-        // Cache the response for 1 hour to prevent duplicate API charges
-        redisTemplate.opsForValue().set("prompt:" + prompt, generatedAnswer, 1, TimeUnit.HOURS);
+        // ── 5. Build response metrics ──
+        response.setAnswer(result.getAnswer());
 
-        response.setAnswer(generatedAnswer);
-        metrics.put("fallback_triggered", fallbackTriggered);
-        metrics.put("qc_score", qcScore);
-        metrics.put("qc_passed", qcPassed);
+        metrics.put("cache_hit", false);
+        metrics.put("model_routed", result.getActualModelId());
+        metrics.put("fallback_triggered", result.isWasRerouted());
+        if (result.isWasRerouted()) {
+            metrics.put("original_model", result.getOriginalModelId());
+        }
+        metrics.put("prompt_tokens", result.getPromptTokens());
+        metrics.put("completion_tokens", result.getCompletionTokens());
+        metrics.put("total_tokens", result.getTotalTokens());
+        metrics.put("provider", result.getProvider());
         metrics.put("latency_ms", System.currentTimeMillis() - startTime);
+        metrics.put("rate_limit_max", result.getRateLimitMax());
+        metrics.put("rate_limit_remaining", result.getRateLimitRemaining());
 
         response.setMetrics(metrics);
         return ResponseEntity.ok(response);
