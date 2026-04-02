@@ -1,6 +1,11 @@
 "use client";
 
-export default function ChatWindow({ messages, chatEndRef }) {
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
+import { vscDarkPlus } from "react-syntax-highlighter/dist/esm/styles/prism";
+
+export default function ChatWindow({ messages, chatEndRef, onRegenerate }) {
   if (messages.length === 0) {
     return (
       <div className="chat-window">
@@ -18,9 +23,57 @@ export default function ChatWindow({ messages, chatEndRef }) {
         <div key={i} className={`chat-message ${msg.role}`}>
           <div className="message-inner">
             <div className={`message-role ${msg.role}`}>
-              {msg.role === "user" ? "You" : "diplomatAI"}
+              {msg.role === "user" ? "You" : (
+                <>diplomatAI <span className="message-model-tag">{msg.model || ""}</span></>
+              )}
             </div>
-            <div className="message-content">{msg.content}</div>
+            <div className="message-content">
+              {msg.role === "user" ? (
+                msg.content
+              ) : (
+                <>
+                  <ReactMarkdown
+                    remarkPlugins={[remarkGfm]}
+                    components={{
+                      code({ node, inline, className, children, ...props }) {
+                        const match = /language-(\w+)/.exec(className || "");
+                        return !inline && match ? (
+                          <SyntaxHighlighter
+                            {...props}
+                            style={vscDarkPlus}
+                            language={match[1]}
+                            PreTag="div"
+                            className="md-code-block"
+                          >
+                            {String(children).replace(/\n$/, "")}
+                          </SyntaxHighlighter>
+                        ) : (
+                          <code {...props} className={className}>
+                            {children}
+                          </code>
+                        );
+                      },
+                    }}
+                  >
+                    {msg.content}
+                  </ReactMarkdown>
+                  {msg.isCachedHit && onRegenerate && (
+                    <div style={{ marginTop: '12px' }}>
+                      <button 
+                        onClick={() => onRegenerate(messages[i - 1]?.content || "")}
+                        className="btn" 
+                        style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border)', fontSize: '0.75rem', padding: '4px 8px', display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', borderRadius: '4px', color: 'var(--text-primary)' }}
+                        onMouseOver={(e) => e.currentTarget.style.background = 'var(--border)'}
+                        onMouseOut={(e) => e.currentTarget.style.background = 'var(--bg-secondary)'}
+                      >
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 2v6h-6"></path><path d="M3 12a9 9 0 0 1 15-6.7L21 8"></path><path d="M3 22v-6h6"></path><path d="M21 12a9 9 0 0 1-15 6.7L3 16"></path></svg>
+                        Regenerate without Cache
+                      </button>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
           </div>
         </div>
       ))}

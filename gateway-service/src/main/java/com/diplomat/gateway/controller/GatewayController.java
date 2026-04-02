@@ -196,51 +196,60 @@ public class GatewayController {
         long startTime = System.currentTimeMillis();
 
         // Check Redis for a cached response before routing to any model
-        String cachedAnswer = redisTemplate.opsForValue().get("prompt:" + prompt);
-        if (cachedAnswer != null) {
-            response.setAnswer(cachedAnswer);
+        if (request.isUseCache()) {
+            String cachedAnswer = redisTemplate.opsForValue().get("prompt:" + prompt);
+            if (cachedAnswer != null) {
+                response.setAnswer(cachedAnswer);
 
-            metrics.put("cache_hit", true);
-            metrics.put("model_routed", "None (Served from Cache)");
-            metrics.put("fallback_triggered", false);
-            metrics.put("qc_score", 100);
-            metrics.put("qc_passed", true);
-            metrics.put("latency_ms", System.currentTimeMillis() - startTime);
+                metrics.put("cache_hit", true);
+                metrics.put("model_routed", "None (Served from Cache)");
+                metrics.put("fallback_triggered", false);
+                metrics.put("qc_score", 100);
+                metrics.put("qc_passed", true);
+                metrics.put("latency_ms", System.currentTimeMillis() - startTime);
 
-            response.setMetrics(metrics);
-            return ResponseEntity.ok(response);
-        }
+                response.setMetrics(metrics);
+                return ResponseEntity.ok(response);
+            }
 
-        // Exact Cache miss — Try Semantic Caching
-        Set<String> keys = redisTemplate.keys("prompt:*");
-        if (keys != null && !keys.isEmpty()) {
-            Set<String> cachedPrompts = keys.stream()
-                    .map(k -> k.substring(7)) // remove "prompt:"
-                    .collect(Collectors.toSet());
+            // Exact Cache miss — Try Semantic Caching
+            Set<String> keys = redisTemplate.keys("prompt:*");
+            if (keys != null && !keys.isEmpty()) {
+                Set<String> cachedPrompts = keys.stream()
+                        .map(k -> k.substring(7)) // remove "prompt:"
+                        .collect(Collectors.toSet());
 
-            Map<String, Object> semanticMatch = qualityCheckClient.checkSemanticCache(prompt, cachedPrompts);
-            if (semanticMatch.containsKey("matched") && (boolean) semanticMatch.get("matched")) {
-                String matchedPrompt = (String) semanticMatch.get("matched_prompt");
-                String semanticCachedAnswer = redisTemplate.opsForValue().get("prompt:" + matchedPrompt);
+                Map<String, Object> semanticMatch = qualityCheckClient.checkSemanticCache(prompt, cachedPrompts);
+                if (semanticMatch.containsKey("matched") && (boolean) semanticMatch.get("matched")) {
+                    String matchedPrompt = (String) semanticMatch.get("matched_prompt");
+                    String semanticCachedAnswer = redisTemplate.opsForValue().get("prompt:" + matchedPrompt);
 
-                if (semanticCachedAnswer != null) {
-                    response.setAnswer(semanticCachedAnswer);
+                    if (semanticCachedAnswer != null) {
+                        response.setAnswer(semanticCachedAnswer);
 
-                    metrics.put("cache_hit", true);
-                    metrics.put("model_routed", "None (Semantic Cache: " + semanticMatch.get("similarity") + ")");
-                    metrics.put("fallback_triggered", false);
-                    metrics.put("qc_score", 100);
-                    metrics.put("qc_passed", true);
-                    metrics.put("latency_ms", System.currentTimeMillis() - startTime);
+                        metrics.put("cache_hit", true);
+                        metrics.put("model_routed", "None (Semantic Cache: " + semanticMatch.get("similarity") + ")");
+                        metrics.put("fallback_triggered", false);
+                        metrics.put("qc_score", 100);
+                        metrics.put("qc_passed", true);
+                        metrics.put("latency_ms", System.currentTimeMillis() - startTime);
 
-                    response.setMetrics(metrics);
-                    return ResponseEntity.ok(response);
+                        response.setMetrics(metrics);
+                        return ResponseEntity.ok(response);
+                    }
                 }
             }
         }
 
         // Full Cache miss — route to the best model based on prompt categorization
-        String selectedModelId = routerService.routePrompt(prompt);
+        String selectedModelId = request.getModelId();
+        boolean manualSelection = true;
+        
+        if (selectedModelId == null || selectedModelId.trim().isEmpty() || selectedModelId.equalsIgnoreCase("auto")) {
+            selectedModelId = routerService.routePrompt(prompt);
+            manualSelection = false;
+        }
+        
         metrics.put("cache_hit", false);
         metrics.put("model_routed", selectedModelId);
 
@@ -253,8 +262,26 @@ public class GatewayController {
         try {
             generatedAnswer = providerClient.callModel(prompt, config);
         } catch (Exception e) {
-            generatedAnswer = "System Error: The gateway could not reach any models or fallbacks. Reason: "
-                    + e.getMessage();
+            if (manualSelection) {
+                System.err.println("Model " + selectedModelId + " explicitly failed: " + e.getMessage());
+                // Attempt an automatic fallback route instead of instantly failing
+                String fallbackId = routerService.routePrompt(prompt);
+                ModelConfig fallbackConfig = modelRegistry.getModelsAsMap().get(fallbackId);
+                if (fallbackConfig == null) {
+                    fallbackConfig = modelRegistry.getModelsAsMap().get("default");
+                }
+                
+                try {
+                    generatedAnswer = providerClient.callModel(prompt, fallbackConfig);
+                    metrics.put("model_routed", fallbackId + " (Auto-Recovered)");
+                } catch (Exception e2) {
+                    generatedAnswer = "System Error: The gateway could not reach any models or fallbacks. Reason: "
+                            + e2.getMessage();
+                }
+            } else {
+                generatedAnswer = "System Error: The gateway could not reach any models or fallbacks. Reason: "
+                        + e.getMessage();
+            }
         }
 
         // Detect if the response came from a fallback model

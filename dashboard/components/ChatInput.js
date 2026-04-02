@@ -2,7 +2,15 @@
 
 import { useState } from "react";
 
-export default function ChatInput({ onSend, loading }) {
+export default function ChatInput({ 
+  onSend, 
+  loading, 
+  registryModels = [], 
+  selectedModel, 
+  setSelectedModel,
+  useCache,
+  setUseCache
+}) {
   const [input, setInput] = useState("");
 
   const handleSubmit = (e) => {
@@ -22,6 +30,41 @@ export default function ChatInput({ onSend, loading }) {
 
   return (
     <div className="chat-input-area">
+      <div style={{ display: 'flex', justifyContent: 'flex-start', alignItems: 'center', marginBottom: '8px', paddingLeft: '16px', gap: '16px' }}>
+        <select 
+          value={selectedModel} 
+          onChange={(e) => setSelectedModel(e.target.value)}
+          disabled={loading}
+          style={{ 
+            background: 'transparent', 
+            color: 'var(--text-muted)', 
+            border: 'none', 
+            fontSize: '0.8rem', 
+            cursor: 'pointer', 
+            outline: 'none',
+            fontWeight: '600',
+            textTransform: 'uppercase',
+            letterSpacing: '0.5px'
+          }}
+        >
+          <option value="auto" style={{ background: 'var(--bg-primary)', color: 'var(--text-primary)' }}>✓ Auto (Semantic Routing)</option>
+          {registryModels.map(m => (
+            <option key={m.id} value={m.id} style={{ background: 'var(--bg-primary)', color: 'var(--text-primary)' }}>
+              {m.name || m.id}
+            </option>
+          ))}
+        </select>
+        <label style={{ display: 'flex', alignItems: 'center', fontSize: '0.8rem', color: 'var(--text-muted)', cursor: 'pointer', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+          <input 
+            type="checkbox" 
+            checked={useCache} 
+            onChange={(e) => setUseCache(e.target.checked)}
+            disabled={loading}
+            style={{ marginRight: '6px', cursor: 'pointer' }}
+          />
+          Use Cache
+        </label>
+      </div>
       <form className="chat-input-wrapper" onSubmit={handleSubmit}>
         <input
           className="chat-input"

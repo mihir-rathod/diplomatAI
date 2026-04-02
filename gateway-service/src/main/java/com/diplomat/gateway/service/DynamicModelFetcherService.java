@@ -89,9 +89,9 @@ public class DynamicModelFetcherService {
             dynamicModels.add(createConfig("claude-3-haiku", "Claude 3 Haiku", provider, apiKey,
                     "https://api.anthropic.com/v1/messages", List.of("fast_response", "general_chat")));
         } else if ("groq".equalsIgnoreCase(provider)) {
-            dynamicModels.add(createConfig("llama-3.1-70b-versatile", "Llama 3.1 70B (Groq)", provider, apiKey,
+            dynamicModels.add(createConfig("llama-3.3-70b-versatile", "Llama 3.3 70B (Groq)", provider, apiKey,
                     "https://api.groq.com/openai/v1/chat/completions", List.of("general_chat", "reasoning")));
-            dynamicModels.add(createConfig("mixtral-8x7b-32768", "Mixtral 8x7B (Groq)", provider, apiKey,
+            dynamicModels.add(createConfig("llama-3.1-8b-instant", "Llama 3.1 8B Instant (Groq)", provider, apiKey,
                     "https://api.groq.com/openai/v1/chat/completions", List.of("fast_response", "coding")));
         } else if ("mistral".equalsIgnoreCase(provider)) {
             dynamicModels.add(createConfig("mistral-large-latest", "Mistral Large", provider, apiKey,

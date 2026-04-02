@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 
-export default function ModelRegistry({ gatewayUrl, refreshKey }) {
+export default function ModelRegistry({ gatewayUrl, refreshKey, onRegistryUpdate }) {
   const [models, setModels] = useState([]);
 
   const fetchRegistry = async () => {
@@ -23,6 +23,7 @@ export default function ModelRegistry({ gatewayUrl, refreshKey }) {
     try {
       await fetch(`${gatewayUrl}/models/registry/${modelId}`, { method: "DELETE" });
       fetchRegistry();
+      if (onRegistryUpdate) onRegistryUpdate();
     } catch (err) {
       console.error("Delete failed:", err);
     }
