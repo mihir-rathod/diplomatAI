@@ -45,10 +45,12 @@ export default function MetricsPanel({ metrics, sessionUsage }) {
       </div>
       
       {m.fallback_triggered && (
-        <div className="metric-row">
-          <span className="metric-label">Rerouted</span>
-          <span className="metric-value warning" style={{color: "var(--warning)"}}>
-            {m.original_model} <span style={{fontSize: "0.6rem"}}>→</span> {m.model_routed}
+        <div className="metric-row" style={{ alignItems: 'flex-start' }}>
+          <span className="metric-label" style={{ whiteSpace: 'nowrap', marginRight: '12px' }}>Rerouted</span>
+          <span className="metric-value warning" style={{color: "var(--warning)", textAlign: "right", wordBreak: "break-word", lineHeight: "1.4"}}>
+            {m.original_model}
+            <br />
+            <span style={{fontSize: "0.7rem", opacity: 0.8}}>↳ {m.model_routed}</span>
           </span>
         </div>
       )}

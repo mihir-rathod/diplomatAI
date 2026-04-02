@@ -249,11 +249,9 @@ public class GatewayController {
 
         // ── 2. Full cache miss — route to the best model ──
         String selectedModelId = request.getModelId();
-        boolean manualSelection = true;
         
         if (selectedModelId == null || selectedModelId.trim().isEmpty() || selectedModelId.equalsIgnoreCase("auto")) {
             selectedModelId = routerService.routePrompt(prompt);
-            manualSelection = false;
         }
 
         ModelConfig config = modelRegistry.getModelsAsMap().get(selectedModelId);
@@ -262,7 +260,7 @@ public class GatewayController {
         }
 
         // ── 3. Call the model with seamless fallback loop ──
-        ModelCallResult result = null;
+        ModelCallResult result = ModelCallResult.error("Initialization", selectedModelId);
         java.util.Set<String> failedModels = new java.util.HashSet<>();
         String currentModelId = selectedModelId;
         boolean isFirstAttempt = true;

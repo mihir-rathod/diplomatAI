@@ -26,6 +26,13 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [isLeftSidebarOpen, setIsLeftSidebarOpen] = useState(true);
   const [isRightSidebarOpen, setIsRightSidebarOpen] = useState(true);
+  
+  // Resizing state
+  const [leftWidth, setLeftWidth] = useState(300);
+  const [rightWidth, setRightWidth] = useState(300);
+  const isDraggingLeft = useRef(false);
+  const isDraggingRight = useRef(false);
+
   const [selectedModel, setSelectedModel] = useState("auto");
   const [useCache, setUseCache] = useState(true);
   const [registryModels, setRegistryModels] = useState([]);
@@ -151,6 +158,35 @@ export default function Home() {
     fetchRegistry();
   }, []);
 
+  // Global mouse listeners for sidebars
+  useEffect(() => {
+    const handleMouseMove = (e) => {
+      if (isDraggingLeft.current) {
+        const newWidth = Math.max(200, Math.min(e.clientX, 600));
+        setLeftWidth(newWidth);
+      } else if (isDraggingRight.current) {
+        const newWidth = Math.max(200, Math.min(window.innerWidth - e.clientX, 600));
+        setRightWidth(newWidth);
+      }
+    };
+    
+    const handleMouseUp = () => {
+      if (isDraggingLeft.current || isDraggingRight.current) {
+        isDraggingLeft.current = false;
+        isDraggingRight.current = false;
+        document.body.style.cursor = 'default';
+        document.body.style.userSelect = 'auto';
+      }
+    };
+
+    document.addEventListener("mousemove", handleMouseMove);
+    document.addEventListener("mouseup", handleMouseUp);
+    return () => {
+      document.removeEventListener("mousemove", handleMouseMove);
+      document.removeEventListener("mouseup", handleMouseUp);
+    };
+  }, []);
+
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
@@ -259,14 +295,25 @@ export default function Home() {
       )}
       
       {isLeftSidebarOpen && (
-        <LeftSidebar
-          sessions={sessions}
-          currentSessionId={currentSessionId}
-          onNewChat={handleNewChat}
-          onSelectSession={handleSelectSession}
-          onDeleteSession={handleDeleteSession}
-          onRenameSession={handleRenameSession}
-        />
+        <>
+          <LeftSidebar
+            sessions={sessions}
+            currentSessionId={currentSessionId}
+            onNewChat={handleNewChat}
+            onSelectSession={handleSelectSession}
+            onDeleteSession={handleDeleteSession}
+            onRenameSession={handleRenameSession}
+            width={leftWidth}
+          />
+          <div 
+            className="resizer" 
+            onMouseDown={() => { 
+              isDraggingLeft.current = true; 
+              document.body.style.cursor = 'col-resize'; 
+              document.body.style.userSelect = 'none'; 
+            }}
+          />
+        </>
       )}
       <div className="main-area">
         <div className="top-nav">
@@ -304,13 +351,25 @@ export default function Home() {
           setUseCache={setUseCache}
         />
       </div>
+      
       {isRightSidebarOpen && (
-        <RightSidebar
-          metrics={metrics}
-          gatewayUrl={GATEWAY_URL}
-          onClearCache={handleClearCache}
-          onRegistryUpdate={fetchRegistry}
-        />
+        <>
+          <div 
+            className="resizer" 
+            onMouseDown={() => { 
+              isDraggingRight.current = true; 
+              document.body.style.cursor = 'col-resize'; 
+              document.body.style.userSelect = 'none'; 
+            }}
+          />
+          <RightSidebar
+            metrics={metrics}
+            gatewayUrl={GATEWAY_URL}
+            onClearCache={handleClearCache}
+            onRegistryUpdate={fetchRegistry}
+            width={rightWidth}
+          />
+        </>
       )}
     </div>
   );

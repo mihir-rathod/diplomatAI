@@ -46,8 +46,6 @@ html, body {
 
 /* ─── Sidebar ─── */
 .sidebar {
-  width: var(--sidebar-width);
-  min-width: var(--sidebar-width);
   background: var(--bg-sidebar);
   display: flex;
   flex-direction: column;
@@ -130,6 +128,10 @@ html, body {
   font-weight: 500;
   cursor: pointer;
   transition: all 0.1s ease-in-out;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
 }
 
 .btn:active {
@@ -402,6 +404,10 @@ html, body {
 }
 
 .message-content li {
+  margin-bottom: 0.25rem;
+}
+
+.message-content li > p {
   margin-bottom: 0.25rem;
 }
 
@@ -801,3 +807,17 @@ html, body {
 .tag-openrouter { background: rgba(139, 92, 246, 0.15); color: var(--provider-openrouter); border: 1px solid rgba(139, 92, 246, 0.3); }
 .tag-together { background: rgba(236, 72, 153, 0.15); color: var(--provider-together); border: 1px solid rgba(236, 72, 153, 0.3); }
 .tag-cache { background: rgba(99, 102, 241, 0.15); color: var(--provider-cache); border: 1px solid rgba(99, 102, 241, 0.3); }
+
+/* ─── Resizer ─── */
+.resizer {
+  width: 5px;
+  cursor: col-resize;
+  background: transparent;
+  flex-shrink: 0;
+  z-index: 10;
+  transition: background 0.2s;
+}
+
+.resizer:hover, .resizer:active {
+  background: var(--accent);
+}

@@ -8,7 +8,8 @@ export default function LeftSidebar({
   onNewChat, 
   onSelectSession, 
   onDeleteSession, 
-  onRenameSession
+  onRenameSession,
+  width = 300
 }) {
   const [editingId, setEditingId] = useState(null);
   const [editTitle, setEditTitle] = useState("");
@@ -29,7 +30,7 @@ export default function LeftSidebar({
   };
 
   return (
-    <aside className="sidebar left">
+    <aside className="sidebar left" style={{ width: `${width}px`, minWidth: `${width}px` }}>
       <div className="sidebar-header">
         <h1>diplomatAI</h1>
         <p>Multi-LLM Gateway</p>

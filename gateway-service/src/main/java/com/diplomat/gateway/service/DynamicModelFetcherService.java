@@ -70,7 +70,6 @@ public class DynamicModelFetcherService {
     public List<ModelConfig> fetchModels(String provider, String apiKey) {
         List<ModelConfig> dynamicModels = new ArrayList<>();
 
-        // TODO: Parse actual API responses to build model lists dynamically
         if ("openai".equalsIgnoreCase(provider)) {
             dynamicModels.add(createConfig("gpt-4o", "OpenAI GPT-4o", provider, apiKey,
                     "https://api.openai.com/v1/chat/completions", List.of("coding", "reasoning")));

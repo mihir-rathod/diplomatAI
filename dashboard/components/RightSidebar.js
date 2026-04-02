@@ -10,7 +10,8 @@ export default function RightSidebar({
   metrics, 
   gatewayUrl, 
   onClearCache, 
-  onRegistryUpdate 
+  onRegistryUpdate,
+  width = 300
 }) {
   const [provider, setProvider] = useState("");
   const [apiKey, setApiKey] = useState("");
@@ -68,14 +69,14 @@ export default function RightSidebar({
   };
 
   return (
-    <aside className="sidebar right">
+    <aside className="sidebar right" style={{ width: `${width}px`, minWidth: `${width}px` }}>
       {/* 2. API Keys & Models */}
-      <div className="sidebar-section" style={{ flexShrink: 0, paddingTop: '20px' }}>
-        <div className="sidebar-section-title" style={{ margin: 0, marginBottom: '12px' }}>
+      <div className="sidebar-section" style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, paddingTop: '20px' }}>
+        <div className="sidebar-section-title" style={{ margin: 0, marginBottom: '12px', flexShrink: 0 }}>
           API Keys & Models
         </div>
-        <div>
-          <form className="provider-form" onSubmit={handleRegister} style={{ marginBottom: "16px" }}>
+        <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
+          <form className="provider-form" onSubmit={handleRegister} style={{ marginBottom: "16px", flexShrink: 0 }}>
             <select
               className="form-select"
               value={provider}
@@ -99,10 +100,10 @@ export default function RightSidebar({
             </button>
           </form>
           {status && (
-            <div className={`status-msg ${status.type}`} style={{ marginBottom: "12px" }}>{status.msg}</div>
+            <div className={`status-msg ${status.type}`} style={{ marginBottom: "12px", flexShrink: 0 }}>{status.msg}</div>
           )}
-          <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Registered Models</div>
-          <div style={{ maxHeight: '150px', overflowY: 'auto', paddingRight: '4px' }}>
+          <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.05em', flexShrink: 0 }}>Registered Models</div>
+          <div style={{ flex: 1, overflowY: 'auto', paddingRight: '4px' }}>
             <ModelRegistry gatewayUrl={gatewayUrl} refreshKey={registryKey} onRegistryUpdate={onRegistryUpdate} />
           </div>
         </div>
