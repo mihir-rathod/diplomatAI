@@ -2,6 +2,7 @@ package com.diplomat.gateway.controller;
 
 import com.diplomat.gateway.model.ApiKeyRequest;
 import com.diplomat.gateway.model.ChatMessage;
+import com.diplomat.gateway.model.ModelConfigView;
 import com.diplomat.gateway.service.DynamicModelFetcherService;
 import com.diplomat.gateway.service.RouterService;
 import com.diplomat.gateway.client.ProviderClient;
@@ -16,6 +17,8 @@ import org.springframework.web.bind.annotation.*;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.core.type.TypeReference;
 import jakarta.annotation.PostConstruct;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -29,6 +32,8 @@ import java.util.concurrent.TimeUnit;
 @RequestMapping("/api/v1/chat")
 @CrossOrigin(origins = "*")
 public class GatewayController {
+
+    private static final Logger log = LoggerFactory.getLogger(GatewayController.class);
 
     private final RouterService routerService;
     private final StringRedisTemplate redisTemplate;
@@ -71,10 +76,10 @@ public class GatewayController {
                         modelRegistry.getModels().add(m);
                     }
                 }
-                System.out.println("Loaded " + persisted.size() + " models from Redis.");
+                log.info("Loaded {} models from Redis registry.", persisted.size());
             }
         } catch (Exception e) {
-            System.out.println("Failed to load registry from Redis: " + e.getMessage());
+            log.error("Failed to load registry from Redis: {}", e.getMessage());
         }
     }
 
@@ -89,7 +94,7 @@ public class GatewayController {
             String json = objectMapper.writeValueAsString(toSave);
             redisTemplate.opsForValue().set(REGISTRY_KEY, json);
         } catch (Exception e) {
-            System.out.println("Failed to persist registry to Redis: " + e.getMessage());
+            log.error("Failed to persist registry to Redis: {}", e.getMessage());
         }
     }
 
@@ -166,9 +171,13 @@ public class GatewayController {
     }
 
     @GetMapping("/models/registry")
-    public ResponseEntity<List<ModelConfig>> getRegistry() {
+    public ResponseEntity<List<ModelConfigView>> getRegistry() {
         List<ModelConfig> models = modelRegistry.getModels();
-        return ResponseEntity.ok(models != null ? models : List.of());
+        if (models == null) return ResponseEntity.ok(List.of());
+        List<ModelConfigView> views = models.stream()
+                .map(ModelConfigView::from)
+                .collect(Collectors.toList());
+        return ResponseEntity.ok(views);
     }
 
     @DeleteMapping("/models/registry/{modelId}")
@@ -299,7 +308,7 @@ public class GatewayController {
                 break;
                 
             } catch (Exception e) {
-                System.err.println("Model " + currentModelId + " failed: " + e.getMessage());
+                log.warn("Model '{}' failed: {}", currentModelId, e.getMessage());
                 failedModels.add(currentModelId);
                 
                 // Get next best model avoiding all failed ones so far

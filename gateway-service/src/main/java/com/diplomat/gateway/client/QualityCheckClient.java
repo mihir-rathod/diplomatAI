@@ -3,12 +3,16 @@ package com.diplomat.gateway.client;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestTemplate;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.HashMap;
 import java.util.Map;
 
 @Component
 public class QualityCheckClient {
+
+    private static final Logger log = LoggerFactory.getLogger(QualityCheckClient.class);
 
     private final RestTemplate restTemplate;
 
@@ -30,8 +34,7 @@ public class QualityCheckClient {
                     qcServiceUrl + "/api/v1/validate", payload, Map.class);
             return result != null ? result : defaultPassResponse();
         } catch (Exception e) {
-            // If QC service is unreachable, default to pass so the user still gets a response
-            System.out.println("QC service unreachable: " + e.getMessage());
+            log.warn("QC service unreachable, defaulting to pass: {}", e.getMessage());
             return defaultPassResponse();
         }
     }
@@ -59,7 +62,7 @@ public class QualityCheckClient {
                     qcServiceUrl + "/api/v1/cache", payload, Map.class);
             return result != null ? result : java.util.Collections.emptyMap();
         } catch (Exception e) {
-            System.out.println("Semantic Cache check failed: " + e.getMessage());
+            log.warn("Semantic cache check failed: {}", e.getMessage());
             return java.util.Collections.emptyMap();
         }
     }

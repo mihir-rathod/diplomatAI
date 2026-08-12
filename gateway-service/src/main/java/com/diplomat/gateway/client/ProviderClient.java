@@ -20,9 +20,13 @@ import java.util.ArrayList;
 import java.util.Collections;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 @Component
 public class ProviderClient {
+
+    private static final Logger log = LoggerFactory.getLogger(ProviderClient.class);
 
     private final RestTemplate restTemplate;
     private final ModelRegistryProperties registryProperties;
@@ -202,8 +206,8 @@ public class ProviderClient {
                     originalConfig.getId());
         }
 
-        System.out.println("RATE LIMIT OR FAILURE DETECTED ON MODEL: " + originalConfig.getId());
-        System.out.println("REROUTING TO DYNAMIC FALLBACK: " + fallbackConfig.getId());
+        log.warn("Rate limit or failure on model '{}': {}", originalConfig.getId(), t.getMessage());
+        log.info("Rerouting to fallback model: '{}'", fallbackConfig.getId());
 
         // Call the fallback model with full conversation context
         ModelCallResult fallbackResult = callModel(messages, fallbackConfig);
