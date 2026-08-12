@@ -9,7 +9,7 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 
 @Configuration
-@ConfigurationProperties(prefix = "")
+@ConfigurationProperties(prefix = "gateway")
 public class ModelRegistryProperties {
 
     private List<ModelConfig> models;
