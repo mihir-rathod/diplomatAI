@@ -19,7 +19,8 @@ export default function ModelRegistry({ gatewayUrl, refreshKey, onRegistryUpdate
     fetchRegistry();
   }, [refreshKey]);
 
-  const handleDelete = async (modelId) => {
+  const handleDelete = async (modelId, modelName) => {
+    if (!window.confirm(`Remove "${modelName || modelId}" from the registry? You will need to re-register to use it again.`)) return;
     try {
       await fetch(`${gatewayUrl}/models/registry/${modelId}`, { method: "DELETE" });
       fetchRegistry();
@@ -40,10 +41,10 @@ export default function ModelRegistry({ gatewayUrl, refreshKey, onRegistryUpdate
           <div>
             <div className="registry-model-name">{m.name || m.id}</div>
             <div className="registry-model-meta">
-              {m.provider} &middot; {m.apiKey ? "••••••" : "No key"}
+              {m.provider} &middot; {m.apiKeyHint ? m.apiKeyHint : "No key"}
             </div>
           </div>
-          <button className="btn btn-danger" onClick={() => handleDelete(m.id)}>
+          <button className="btn btn-danger" onClick={() => handleDelete(m.id, m.name)}>
             Delete
           </button>
         </div>

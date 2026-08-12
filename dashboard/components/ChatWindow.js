@@ -20,7 +20,7 @@ export default function ChatWindow({ messages, chatEndRef, onRegenerate, loading
   return (
     <div className="chat-window">
       {messages.map((msg, i) => (
-        <div key={i} className={`chat-message ${msg.role}`}>
+        <div key={msg.id || i} className={`chat-message ${msg.role}`}>
           <div className="message-inner">
             <div className={`message-role ${msg.role}`}>
               {msg.role === "user" ? "You" : (

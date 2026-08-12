@@ -232,7 +232,7 @@ export default function Home() {
       generateTitleForSession(prompt, currentSessionId);
     }
 
-    const userMsg = { role: "user", content: prompt };
+    const userMsg = { id: crypto.randomUUID(), role: "user", content: prompt };
     setMessages((prev) => [...prev, userMsg]);
     setLoading(true);
 
@@ -299,6 +299,7 @@ export default function Home() {
       setMessages((prev) => [
         ...prev, 
         { 
+          id: crypto.randomUUID(),
           role: "assistant", 
           content: answer, 
           model: m.model_routed || "Unknown",
@@ -311,7 +312,7 @@ export default function Home() {
     } catch (err) {
       setMessages((prev) => [
         ...prev,
-        { role: "assistant", content: "Gateway is unreachable. Please check if the services are running." },
+        { id: crypto.randomUUID(), role: "assistant", content: "Gateway is unreachable. Please check if the services are running." },
       ]);
     } finally {
       setLoading(false);
