@@ -237,8 +237,15 @@ export default function Home() {
     setLoading(true);
 
     try {
+      // Build clean conversation history for the backend (strip UI-only metadata)
+      const conversationHistory = [
+        ...messages.map(m => ({ role: m.role, content: m.content })),
+        { role: "user", content: prompt }
+      ];
+
       const reqBody = { 
         prompt, 
+        messages: conversationHistory,
         useCache: forceBypassCache ? false : useCache 
       };
       if (selectedModel !== "auto") {

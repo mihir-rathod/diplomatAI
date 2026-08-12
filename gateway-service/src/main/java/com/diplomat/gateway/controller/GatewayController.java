@@ -1,6 +1,7 @@
 package com.diplomat.gateway.controller;
 
 import com.diplomat.gateway.model.ApiKeyRequest;
+import com.diplomat.gateway.model.ChatMessage;
 import com.diplomat.gateway.service.DynamicModelFetcherService;
 import com.diplomat.gateway.service.RouterService;
 import com.diplomat.gateway.client.ProviderClient;
@@ -247,7 +248,16 @@ public class GatewayController {
             }
         }
 
-        // ── 2. Full cache miss — route to the best model ──
+        // ── 2. Full cache miss — build messages and route to the best model ──
+        // Build conversation context: prefer messages[] from request, fallback to wrapping prompt
+        List<ChatMessage> conversationMessages;
+        if (request.getMessages() != null && !request.getMessages().isEmpty()) {
+            conversationMessages = request.getMessages();
+        } else {
+            conversationMessages = new ArrayList<>();
+            conversationMessages.add(new ChatMessage("user", prompt));
+        }
+
         String selectedModelId = request.getModelId();
         
         if (selectedModelId == null || selectedModelId.trim().isEmpty() || selectedModelId.equalsIgnoreCase("auto")) {
@@ -272,7 +282,7 @@ public class GatewayController {
             }
 
             try {
-                result = providerClient.callModel(prompt, currentConfig);
+                result = providerClient.callModel(conversationMessages, currentConfig);
                 
                 // If it returned an error (e.g. from internal fallback circuit breaker), treat as failure
                 if (result.getAnswer() != null && result.getAnswer().startsWith("Error:")) {
