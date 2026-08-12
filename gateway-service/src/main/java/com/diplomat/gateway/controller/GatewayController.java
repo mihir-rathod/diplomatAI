@@ -2,7 +2,11 @@ package com.diplomat.gateway.controller;
 
 import com.diplomat.gateway.model.ApiKeyRequest;
 import com.diplomat.gateway.model.ChatMessage;
+import com.diplomat.gateway.model.Message;
 import com.diplomat.gateway.model.ModelConfigView;
+import com.diplomat.gateway.repository.MessageRepository;
+import com.diplomat.gateway.repository.SessionRepository;
+import com.diplomat.gateway.repository.UserRepository;
 import com.diplomat.gateway.service.DynamicModelFetcherService;
 import com.diplomat.gateway.service.RouterService;
 import com.diplomat.gateway.client.ProviderClient;
@@ -13,6 +17,7 @@ import com.diplomat.gateway.config.ModelRegistryProperties.ModelConfig;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.core.type.TypeReference;
@@ -30,7 +35,6 @@ import java.util.concurrent.TimeUnit;
 
 @RestController
 @RequestMapping("/api/v1/chat")
-@CrossOrigin(origins = "*")
 public class GatewayController {
 
     private static final Logger log = LoggerFactory.getLogger(GatewayController.class);
@@ -41,19 +45,28 @@ public class GatewayController {
     private final ProviderClient providerClient;
     private final QualityCheckClient qualityCheckClient;
     private final ModelRegistryProperties modelRegistry;
+    private final SessionRepository sessionRepository;
+    private final MessageRepository messageRepository;
+    private final UserRepository userRepository;
 
     @Autowired
     public GatewayController(RouterService routerService, StringRedisTemplate redisTemplate,
             DynamicModelFetcherService modelFetcherService,
             ProviderClient providerClient,
             QualityCheckClient qualityCheckClient,
-            ModelRegistryProperties modelRegistry) {
+            ModelRegistryProperties modelRegistry,
+            SessionRepository sessionRepository,
+            MessageRepository messageRepository,
+            UserRepository userRepository) {
         this.routerService = routerService;
         this.redisTemplate = redisTemplate;
         this.modelFetcherService = modelFetcherService;
         this.providerClient = providerClient;
         this.qualityCheckClient = qualityCheckClient;
         this.modelRegistry = modelRegistry;
+        this.sessionRepository = sessionRepository;
+        this.messageRepository = messageRepository;
+        this.userRepository = userRepository;
     }
 
     private final ObjectMapper objectMapper = new ObjectMapper();
@@ -199,7 +212,8 @@ public class GatewayController {
     }
 
     @PostMapping
-    public ResponseEntity<GatewayResponse> processPrompt(@RequestBody GatewayRequest request) {
+    public ResponseEntity<GatewayResponse> processPrompt(@RequestBody GatewayRequest request,
+                                                          Authentication auth) {
         String prompt = request.getPrompt();
         GatewayResponse response = new GatewayResponse();
         Map<String, Object> metrics = new HashMap<>();
@@ -328,11 +342,39 @@ public class GatewayController {
         }
 
         // ── 4. Cache the response ──
-        if (!result.getAnswer().startsWith("System Error") && !result.getAnswer().startsWith("Error:")) {
+        boolean isError = result.getAnswer().startsWith("System Error") || result.getAnswer().startsWith("Error:");
+        if (!isError) {
             redisTemplate.opsForValue().set("prompt:" + prompt, result.getAnswer(), 1, TimeUnit.HOURS);
         }
 
-        // ── 5. Build response metrics ──
+        // ── 5. Persist messages to Postgres (if sessionId provided and not an error) ──
+        final ModelCallResult finalResult = result; // capture for lambda (result is not effectively final)
+        if (!isError && request.getSessionId() != null && auth != null) {
+            try {
+                Long userId = (Long) auth.getPrincipal();
+                sessionRepository.findById(request.getSessionId()).ifPresent(session -> {
+                    if (session.getUser().getId().equals(userId)) {
+                        // Persist the user's message
+                        Message userMessage = new Message(session, "user", prompt);
+                        messageRepository.save(userMessage);
+
+                        // Persist the assistant's reply
+                        Message assistantMessage = new Message(session, "assistant", finalResult.getAnswer());
+                        assistantMessage.setModel(finalResult.getActualModelId());
+                        assistantMessage.setProvider(finalResult.getProvider());
+                        messageRepository.save(assistantMessage);
+
+                        // Touch updatedAt on the session
+                        session.setUpdatedAt(java.time.Instant.now());
+                        sessionRepository.save(session);
+                    }
+                });
+            } catch (Exception e) {
+                log.warn("Failed to persist messages to session {}: {}", request.getSessionId(), e.getMessage());
+            }
+        }
+
+        // ── 6. Build response metrics ──
         response.setAnswer(result.getAnswer());
 
         metrics.put("cache_hit", false);
