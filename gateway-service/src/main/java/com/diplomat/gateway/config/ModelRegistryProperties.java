@@ -5,7 +5,6 @@ import org.springframework.context.annotation.Configuration;
 
 import java.util.List;
 import java.util.Map;
-import java.util.function.Function;
 import java.util.stream.Collectors;
 
 @Configuration
@@ -27,7 +26,8 @@ public class ModelRegistryProperties {
         if (models == null)
             return Map.of();
         return models.stream()
-                .collect(Collectors.toMap(ModelConfig::getId, Function.identity()));
+                .filter(m -> m != null && m.getId() != null)
+                .collect(Collectors.toMap(m -> m.getId(), m -> m));
     }
 
     public static class ModelConfig {
