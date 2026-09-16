@@ -89,6 +89,7 @@ docker compose up --build -d
 |---------|-----|
 | Next.js Dashboard | `http://localhost:3000` |
 | Gateway API | `http://localhost:8080/api/v1/chat` |
+| Quality Check Service | `http://localhost:8000` |
 | Redis | `localhost:6379` |
 
 ---
@@ -98,12 +99,18 @@ docker compose up --build -d
 ### Chat Request (Gateway)
 ```
 POST /api/v1/chat
-Body: { "prompt": "your question", "modelId": "auto", "useCache": true }
+Body: { 
+  "prompt": "your question", 
+  "modelId": "auto", 
+  "useCache": true, 
+  "messages": [{ "role": "user", "content": "..." }]  // optional — full conversation context
+}
 Returns: { 
   "answer": "...", 
   "metrics": { 
      "cache_hit", "model_routed", "fallback_triggered", 
-     "original_model", "rate_limit_max", "rate_limit_remaining", 
+     "original_model", "provider", "latency_ms", "semantic_similarity",
+     "rate_limit_max", "rate_limit_remaining", 
      "prompt_tokens", "completion_tokens", "total_tokens"
   } 
 }
@@ -126,6 +133,7 @@ DELETE /api/v1/chat/cache                    → Flush Redis Cache
 ### Health & Monitoring
 ```
 GET /api/v1/chat/health  → Gateway status + Redis connectivity
+GET /health               → Quality Check Service status (on :8000)
 ```
 
 ---
@@ -145,6 +153,8 @@ diplomatAI/
 │   │   ├── service/            # Intelligent routing
 │   │   └── config/             # Registry management
 │   └── src/main/resources/     
+├── quality-check-service/      # Semantic Cache Matching & Answer Relevance (Python / FastAPI)
+│   └── main.py                 # /api/v1/cache, /api/v1/validate, /health
 ├── docker-compose.yml          # Network & Container orchestration
 └── README.md
 ```
