@@ -9,7 +9,7 @@
 
 A resilient AI API Gateway that sits between your applications and LLM providers. It intercepts, caches, routes, validates, and fault-tolerates every AI request — so your infrastructure doesn't break when a provider does.
 
-Includes a deeply optimized **3-Pane IDE-Style Dashboard** built in Next.js 15 for API key management, real-time rate limit tracking, and seamless model fallback interactions.
+Includes a deeply optimized **3-Pane ChatGPT-Style Dashboard** built in Next.js 15 for API key management, real-time rate limit tracking, and seamless model fallback interactions.
 
 ---
 
@@ -19,7 +19,7 @@ Includes a deeply optimized **3-Pane IDE-Style Dashboard** built in Next.js 15 f
 |---------|-------------|---------------------|
 | **Cost trap** | An agent loops the same question 1,000× — you pay for 1,000 requests | **Semantic Caching** returns identical and similarly-worded prompts instantly at $0 |
 | **Rate limit crash** | Provider returns 429 — your system crashes | **Seamless Fallback Engine** traps errors and autonomously loops through priority models to ensure stability |
-| **Silent throttling** | API restricts token limits opaquely without alerting you | **Header Interception** tracks real-time limits natively and displays dynamic limit bars directly inside the IDE Dashboard |
+| **Silent throttling** | API restricts token limits opaquely without alerting you | **Header Interception** tracks real-time limits natively and displays dynamic limit bars directly inside the dashboard |
 
 ---
 
@@ -153,8 +153,8 @@ diplomatAI/
 │   │   ├── service/            # Intelligent routing
 │   │   └── config/             # Registry management
 │   └── src/main/resources/     
-├── quality-check-service/      # Semantic Cache Matching & Answer Relevance (Python / FastAPI)
-│   └── main.py                 # /api/v1/cache, /api/v1/validate, /health
+├── quality-check-service/      # Semantic Cache Matching (Python / FastAPI)
+│   └── main.py                 # /api/v1/cache + /health are live; /api/v1/validate (relevance/toxicity scoring) is implemented but not yet called by the gateway
 ├── docker-compose.yml          # Network & Container orchestration
 └── README.md
 ```
