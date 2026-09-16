@@ -29,10 +29,12 @@ Includes a deeply optimized **3-Pane IDE-Style Dashboard** built in Next.js 15 f
 graph TD
     User([User]) -->|Chat Inputs| UI(Next.js Dashboard \n :3000)
     UI -->|REST API| GW(Java Spring Boot Gateway \n :8080)
-    
+
     subgraph Core Services
         GW -->|1. Exact Cache Check| Redis[(Redis \n :6379)]
-        GW -.->|On Cache Miss| Router{Intelligent Router}
+        GW -.->|On Exact Miss| QC(Quality Check Service \n FastAPI :8000)
+        QC -->|2. Semantic Cache Match?| GW
+        GW -.->|On Semantic Miss| Router{Intelligent Router}
         Router -->|Fallback Loop Engine| Engine(Autonomous Fallback \n Model Looper)
         Engine -->|Provider Dispatch| Fetcher
     end
@@ -46,8 +48,8 @@ graph TD
     P1 -.->|Interception: Limits & Usage| GW
     P2 -.->|Interception: Limits & Usage| GW
     
-    GW -->|2. Error Check & Metric Mapping| GW
-    GW -->|3. Return & Cache| UI
+    GW -->|3. Error Check & Metric Mapping| GW
+    GW -->|4. Return & Cache| UI
     GW -.->|Write| Redis
 ```
 
