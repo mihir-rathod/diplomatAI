@@ -15,6 +15,25 @@ services:
     networks:
       - diplomat-net
 
+  postgres:
+    image: postgres:16-alpine
+    container_name: diplomat-postgres
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_DB=diplomatai
+      - POSTGRES_USER=diplomat
+      - POSTGRES_PASSWORD=diplomat_secret
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U diplomat -d diplomatai"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - diplomat-net
+
   gateway:
     build: ./gateway-service
     container_name: diplomat-gateway
@@ -23,10 +42,17 @@ services:
     depends_on:
       redis:
         condition: service_healthy
+      postgres:
+        condition: service_healthy
     environment:
       - SPRING_DATA_REDIS_HOST=redis
       - SPRING_DATA_REDIS_PORT=6379
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/diplomatai
+      - SPRING_DATASOURCE_USERNAME=diplomat
+      - SPRING_DATASOURCE_PASSWORD=diplomat_secret
+      - SPRING_JPA_HIBERNATE_DDL_AUTO=update
       - QC_SERVICE_URL=http://quality-check:8000
+      - JWT_SECRET=${JWT_SECRET:-diplomatai_jwt_secret_key_change_in_production_min32chars}
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:8080/api/v1/chat/health || exit 1"]
       interval: 15s
@@ -60,11 +86,13 @@ services:
         condition: service_healthy
     environment:
       - NEXT_PUBLIC_GATEWAY_URL=http://gateway:8080/api/v1/chat
+      - NEXT_PUBLIC_AUTH_URL=http://gateway:8080/api/v1/auth
     networks:
       - diplomat-net
 
 volumes:
   redis_data:
+  postgres_data:
 
 networks:
   diplomat-net:
