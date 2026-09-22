@@ -1,7 +1,7 @@
 package com.diplomat.gateway.client;
 
+import com.diplomat.gateway.config.ActiveModelRegistry;
 import com.diplomat.gateway.config.ModelRegistryProperties.ModelConfig;
-import com.diplomat.gateway.config.ModelRegistryProperties;
 import com.diplomat.gateway.model.ChatMessage;
 import com.diplomat.gateway.service.RouterService;
 import io.github.resilience4j.ratelimiter.annotation.RateLimiter;
@@ -29,13 +29,13 @@ public class ProviderClient {
     private static final Logger log = LoggerFactory.getLogger(ProviderClient.class);
 
     private final RestTemplate restTemplate;
-    private final ModelRegistryProperties registryProperties;
+    private final ActiveModelRegistry activeModelRegistry;
     private final RouterService routerService;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
-    public ProviderClient(RestTemplate restTemplate, ModelRegistryProperties registryProperties, @Lazy RouterService routerService) {
+    public ProviderClient(RestTemplate restTemplate, ActiveModelRegistry activeModelRegistry, @Lazy RouterService routerService) {
         this.restTemplate = restTemplate;
-        this.registryProperties = registryProperties;
+        this.activeModelRegistry = activeModelRegistry;
         this.routerService = routerService;
     }
 
@@ -199,7 +199,7 @@ public class ProviderClient {
                     originalConfig.getId());
         }
 
-        ModelConfig fallbackConfig = registryProperties.getModelsAsMap().get(fallbackId);
+        ModelConfig fallbackConfig = activeModelRegistry.getModels().get(fallbackId);
         if (fallbackConfig == null) {
             return ModelCallResult.error(
                     "Error: Defined fallback model '" + fallbackId + "' not found in registry.",

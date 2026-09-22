@@ -53,6 +53,7 @@ services:
       - SPRING_JPA_HIBERNATE_DDL_AUTO=update
       - QC_SERVICE_URL=http://quality-check:8000
       - JWT_SECRET=${JWT_SECRET:-diplomatai_jwt_secret_key_change_in_production_min32chars}
+      - API_KEY_ENCRYPTION_SECRET=${API_KEY_ENCRYPTION_SECRET:-diplomatai_api_key_encryption_secret_change_in_production}
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:8080/api/v1/chat/health || exit 1"]
       interval: 15s
@@ -87,6 +88,7 @@ services:
     environment:
       - NEXT_PUBLIC_GATEWAY_URL=http://gateway:8080/api/v1/chat
       - NEXT_PUBLIC_AUTH_URL=http://gateway:8080/api/v1/auth
+      - NEXT_PUBLIC_SESSIONS_URL=http://gateway:8080/api/v1/sessions
     networks:
       - diplomat-net
 

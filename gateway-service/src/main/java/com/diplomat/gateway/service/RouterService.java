@@ -1,6 +1,6 @@
 package com.diplomat.gateway.service;
 
-import com.diplomat.gateway.config.ModelRegistryProperties;
+import com.diplomat.gateway.config.ActiveModelRegistry;
 import com.diplomat.gateway.config.ModelRegistryProperties.ModelConfig;
 import org.springframework.stereotype.Service;
 
@@ -10,7 +10,7 @@ import java.util.Map;
 @Service
 public class RouterService {
 
-    private final ModelRegistryProperties modelRegistry;
+    private final ActiveModelRegistry activeModelRegistry;
 
     // Keywords used for prompt categorization
     private static final List<String> CODING_KEYWORDS = List.of(
@@ -32,8 +32,8 @@ public class RouterService {
     private static final List<String> GENERAL_PROVIDER_PRIORITY = List.of(
             "gemini", "mistral", "groq", "openai", "anthropic", "openrouter", "together");
 
-    public RouterService(ModelRegistryProperties modelRegistry) {
-        this.modelRegistry = modelRegistry;
+    public RouterService(ActiveModelRegistry activeModelRegistry) {
+        this.activeModelRegistry = activeModelRegistry;
     }
 
     public String routePrompt(String prompt) {
@@ -81,7 +81,7 @@ public class RouterService {
      * that actually exists in the live registry, ignoring excluded IDs.
      */
     private String findBestAvailableModel(List<String> providerPriority, java.util.Set<String> excludeModelIds) {
-        Map<String, ModelConfig> models = modelRegistry.getModelsAsMap();
+        Map<String, ModelConfig> models = activeModelRegistry.getModels();
 
         for (String preferredProvider : providerPriority) {
             for (ModelConfig config : models.values()) {

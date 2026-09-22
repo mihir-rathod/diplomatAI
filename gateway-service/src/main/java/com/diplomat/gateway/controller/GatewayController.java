@@ -4,14 +4,19 @@ import com.diplomat.gateway.model.ApiKeyRequest;
 import com.diplomat.gateway.model.ChatMessage;
 import com.diplomat.gateway.model.Message;
 import com.diplomat.gateway.model.ModelConfigView;
+import com.diplomat.gateway.model.RegisteredModel;
+import com.diplomat.gateway.model.User;
 import com.diplomat.gateway.repository.MessageRepository;
+import com.diplomat.gateway.repository.RegisteredModelRepository;
 import com.diplomat.gateway.repository.SessionRepository;
 import com.diplomat.gateway.repository.UserRepository;
+import com.diplomat.gateway.security.ApiKeyCipher;
 import com.diplomat.gateway.service.DynamicModelFetcherService;
 import com.diplomat.gateway.service.RouterService;
 import com.diplomat.gateway.client.ProviderClient;
 import com.diplomat.gateway.client.QualityCheckClient;
 import com.diplomat.gateway.client.ModelCallResult;
+import com.diplomat.gateway.config.ActiveModelRegistry;
 import com.diplomat.gateway.config.ModelRegistryProperties;
 import com.diplomat.gateway.config.ModelRegistryProperties.ModelConfig;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -19,9 +24,6 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.core.type.TypeReference;
-import jakarta.annotation.PostConstruct;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -48,6 +50,9 @@ public class GatewayController {
     private final SessionRepository sessionRepository;
     private final MessageRepository messageRepository;
     private final UserRepository userRepository;
+    private final RegisteredModelRepository registeredModelRepository;
+    private final ActiveModelRegistry activeModelRegistry;
+    private final ApiKeyCipher apiKeyCipher;
 
     @Autowired
     public GatewayController(RouterService routerService, StringRedisTemplate redisTemplate,
@@ -57,7 +62,10 @@ public class GatewayController {
             ModelRegistryProperties modelRegistry,
             SessionRepository sessionRepository,
             MessageRepository messageRepository,
-            UserRepository userRepository) {
+            UserRepository userRepository,
+            RegisteredModelRepository registeredModelRepository,
+            ActiveModelRegistry activeModelRegistry,
+            ApiKeyCipher apiKeyCipher) {
         this.routerService = routerService;
         this.redisTemplate = redisTemplate;
         this.modelFetcherService = modelFetcherService;
@@ -67,48 +75,40 @@ public class GatewayController {
         this.sessionRepository = sessionRepository;
         this.messageRepository = messageRepository;
         this.userRepository = userRepository;
+        this.registeredModelRepository = registeredModelRepository;
+        this.activeModelRegistry = activeModelRegistry;
+        this.apiKeyCipher = apiKeyCipher;
     }
 
-    private final ObjectMapper objectMapper = new ObjectMapper();
-    private static final String REGISTRY_KEY = "registry:models";
-
-    @PostConstruct
-    public void loadRegistryFromRedis() {
-        try {
-            String json = redisTemplate.opsForValue().get(REGISTRY_KEY);
-            if (json != null && !json.isEmpty()) {
-                List<ModelConfig> persisted = objectMapper.readValue(
-                        json, new TypeReference<List<ModelConfig>>() {});
-                if (modelRegistry.getModels() == null) {
-                    modelRegistry.setModels(new ArrayList<>());
-                }
-                for (ModelConfig m : persisted) {
-                    boolean exists = modelRegistry.getModels().stream()
-                            .anyMatch(e -> e.getId().equals(m.getId()));
-                    if (!exists) {
-                        modelRegistry.getModels().add(m);
-                    }
-                }
-                log.info("Loaded {} models from Redis registry.", persisted.size());
-            }
-        } catch (Exception e) {
-            log.error("Failed to load registry from Redis: {}", e.getMessage());
-        }
+    private User currentUser(Authentication auth) {
+        Long userId = (Long) auth.getPrincipal();
+        return userRepository.findById(userId)
+                .orElseThrow(() -> new IllegalStateException("Authenticated user not found: " + userId));
     }
 
-    private void persistRegistry() {
-        try {
-            List<ModelConfig> models = modelRegistry.getModels();
-            if (models == null) models = List.of();
-            // Only persist non-internal models
-            List<ModelConfig> toSave = models.stream()
-                    .filter(m -> !"internal".equalsIgnoreCase(m.getProvider()))
-                    .collect(Collectors.toList());
-            String json = objectMapper.writeValueAsString(toSave);
-            redisTemplate.opsForValue().set(REGISTRY_KEY, json);
-        } catch (Exception e) {
-            log.error("Failed to persist registry to Redis: {}", e.getMessage());
+    private ModelConfig toModelConfig(RegisteredModel rm) {
+        ModelConfig config = new ModelConfig();
+        config.setId(rm.getModelId());
+        config.setName(rm.getName());
+        config.setProvider(rm.getProvider());
+        config.setEndpoint(rm.getEndpoint());
+        config.setApiKey(apiKeyCipher.decrypt(rm.getApiKeyEncrypted()));
+        config.setTimeoutMs(rm.getTimeoutMs());
+        config.setCapabilities(rm.getCapabilities());
+        return config;
+    }
+
+    /** The caller's own registered models plus the global "default" fallback from models.yaml. */
+    private Map<String, ModelConfig> buildAvailableModels(User user) {
+        Map<String, ModelConfig> available = new HashMap<>();
+        ModelConfig defaultConfig = modelRegistry.getModelsAsMap().get("default");
+        if (defaultConfig != null) {
+            available.put("default", defaultConfig);
         }
+        for (RegisteredModel rm : registeredModelRepository.findByUser(user)) {
+            available.put(rm.getModelId(), toModelConfig(rm));
+        }
+        return available;
     }
 
     @DeleteMapping("/cache")
@@ -145,7 +145,7 @@ public class GatewayController {
     }
 
     @PostMapping("/models")
-    public ResponseEntity<?> fetchProviderModels(@RequestBody ApiKeyRequest request) {
+    public ResponseEntity<?> fetchProviderModels(@RequestBody ApiKeyRequest request, Authentication auth) {
         if (request.getProvider() == null || request.getApiKey() == null) {
             return ResponseEntity.badRequest().body(Map.of("error", "Provider and API key are required."));
         }
@@ -164,56 +164,59 @@ public class GatewayController {
             ));
         }
 
-        List<ModelConfig> availableModels = modelFetcherService.fetchModels(
+        User user = currentUser(auth);
+        List<ModelConfig> fetchedModels = modelFetcherService.fetchModels(
                 request.getProvider(), request.getApiKey());
+        String encryptedKey = apiKeyCipher.encrypt(request.getApiKey());
 
-        // Add fetched models into the live registry so they become routable
-        if (modelRegistry.getModels() == null) {
-            modelRegistry.setModels(new ArrayList<>());
-        }
-        for (ModelConfig m : availableModels) {
-            boolean exists = modelRegistry.getModels().stream()
-                    .anyMatch(existing -> existing.getId().equals(m.getId()));
-            if (!exists) {
-                modelRegistry.getModels().add(m);
-            }
+        // Register (or refresh) these models against the caller's own account
+        for (ModelConfig m : fetchedModels) {
+            RegisteredModel rm = registeredModelRepository.findByUserAndModelId(user, m.getId())
+                    .orElseGet(RegisteredModel::new);
+            rm.setUser(user);
+            rm.setModelId(m.getId());
+            rm.setName(m.getName());
+            rm.setProvider(m.getProvider());
+            rm.setEndpoint(m.getEndpoint());
+            rm.setApiKeyEncrypted(encryptedKey);
+            rm.setTimeoutMs(m.getTimeoutMs());
+            rm.setCapabilities(m.getCapabilities());
+            registeredModelRepository.save(rm);
         }
 
-        persistRegistry();
-        return ResponseEntity.ok(availableModels);
+        return ResponseEntity.ok(fetchedModels);
     }
 
     @GetMapping("/models/registry")
-    public ResponseEntity<List<ModelConfigView>> getRegistry() {
-        List<ModelConfig> models = modelRegistry.getModels();
-        if (models == null) return ResponseEntity.ok(List.of());
-        List<ModelConfigView> views = models.stream()
-                .map(ModelConfigView::from)
+    public ResponseEntity<List<ModelConfigView>> getRegistry(Authentication auth) {
+        User user = currentUser(auth);
+        List<ModelConfigView> views = registeredModelRepository.findByUser(user).stream()
+                .map(rm -> ModelConfigView.from(toModelConfig(rm)))
                 .collect(Collectors.toList());
         return ResponseEntity.ok(views);
     }
 
     @DeleteMapping("/models/registry/{modelId}")
-    public ResponseEntity<Map<String, String>> removeFromRegistry(@PathVariable String modelId) {
-        List<ModelConfig> models = modelRegistry.getModels();
-        if (models == null) {
+    public ResponseEntity<Map<String, String>> removeFromRegistry(@PathVariable String modelId, Authentication auth) {
+        User user = currentUser(auth);
+        if (!registeredModelRepository.existsByUserAndModelId(user, modelId)) {
             return ResponseEntity.notFound().build();
         }
 
-        boolean removed = models.removeIf(m -> m.getId().equals(modelId));
-        if (removed) {
-            persistRegistry();
-            Map<String, String> result = new HashMap<>();
-            result.put("status", "removed");
-            result.put("modelId", modelId);
-            return ResponseEntity.ok(result);
-        }
-        return ResponseEntity.notFound().build();
+        registeredModelRepository.deleteByUserAndModelId(user, modelId);
+        Map<String, String> result = new HashMap<>();
+        result.put("status", "removed");
+        result.put("modelId", modelId);
+        return ResponseEntity.ok(result);
     }
 
     @PostMapping
     public ResponseEntity<GatewayResponse> processPrompt(@RequestBody GatewayRequest request,
                                                           Authentication auth) {
+        User user = currentUser(auth);
+        Map<String, ModelConfig> availableModels = buildAvailableModels(user);
+        activeModelRegistry.setModels(availableModels);
+
         String prompt = request.getPrompt();
         GatewayResponse response = new GatewayResponse();
         Map<String, Object> metrics = new HashMap<>();
@@ -287,9 +290,9 @@ public class GatewayController {
             selectedModelId = routerService.routePrompt(prompt);
         }
 
-        ModelConfig config = modelRegistry.getModelsAsMap().get(selectedModelId);
+        ModelConfig config = availableModels.get(selectedModelId);
         if (config == null) {
-            config = modelRegistry.getModelsAsMap().get("default");
+            config = availableModels.get("default");
         }
 
         // ── 3. Call the model with seamless fallback loop ──
@@ -299,9 +302,9 @@ public class GatewayController {
         boolean isFirstAttempt = true;
 
         while (true) {
-            ModelConfig currentConfig = modelRegistry.getModelsAsMap().get(currentModelId);
+            ModelConfig currentConfig = availableModels.get(currentModelId);
             if (currentConfig == null) {
-                currentConfig = modelRegistry.getModelsAsMap().get("default");
+                currentConfig = availableModels.get("default");
             }
 
             try {
@@ -349,11 +352,10 @@ public class GatewayController {
 
         // ── 5. Persist messages to Postgres (if sessionId provided and not an error) ──
         final ModelCallResult finalResult = result; // capture for lambda (result is not effectively final)
-        if (!isError && request.getSessionId() != null && auth != null) {
+        if (!isError && request.getSessionId() != null) {
             try {
-                Long userId = (Long) auth.getPrincipal();
                 sessionRepository.findById(request.getSessionId()).ifPresent(session -> {
-                    if (session.getUser().getId().equals(userId)) {
+                    if (session.getUser().getId().equals(user.getId())) {
                         // Persist the user's message
                         Message userMessage = new Message(session, "user", prompt);
                         messageRepository.save(userMessage);
