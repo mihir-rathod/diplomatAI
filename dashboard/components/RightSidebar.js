@@ -3,6 +3,7 @@
 import { useState } from "react";
 import ModelRegistry from "./ModelRegistry";
 import MetricsPanel from "./MetricsPanel";
+import { apiFetch } from "@/lib/api";
 
 const PROVIDERS = ["OpenAI", "Gemini", "Anthropic", "Groq", "Mistral", "OpenRouter", "Together"];
 
@@ -31,7 +32,7 @@ export default function RightSidebar({
     setStatus(null);
 
     try {
-      const res = await fetch(`${gatewayUrl}/models`, {
+      const res = await apiFetch(`${gatewayUrl}/models`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ provider, apiKey }),

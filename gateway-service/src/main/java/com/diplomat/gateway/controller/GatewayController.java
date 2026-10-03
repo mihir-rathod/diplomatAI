@@ -21,9 +21,11 @@ import com.diplomat.gateway.config.ModelRegistryProperties;
 import com.diplomat.gateway.config.ModelRegistryProperties.ModelConfig;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.server.ResponseStatusException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -82,8 +84,9 @@ public class GatewayController {
 
     private User currentUser(Authentication auth) {
         Long userId = (Long) auth.getPrincipal();
+        // A valid JWT for a user that no longer exists (e.g. after a DB reset) must read as "sign in again", not a 500
         return userRepository.findById(userId)
-                .orElseThrow(() -> new IllegalStateException("Authenticated user not found: " + userId));
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED, "User no longer exists"));
     }
 
     private ModelConfig toModelConfig(RegisteredModel rm) {
@@ -196,8 +199,10 @@ public class GatewayController {
         return ResponseEntity.ok(views);
     }
 
-    @DeleteMapping("/models/registry/{modelId}")
+    // {*modelId} (not {modelId}) so IDs containing "/" like "meta-llama/llama-3.1-8b-instruct:free" match
+    @DeleteMapping("/models/registry/{*modelId}")
     public ResponseEntity<Map<String, String>> removeFromRegistry(@PathVariable String modelId, Authentication auth) {
+        if (modelId.startsWith("/")) modelId = modelId.substring(1);
         User user = currentUser(auth);
         if (!registeredModelRepository.existsByUserAndModelId(user, modelId)) {
             return ResponseEntity.notFound().build();

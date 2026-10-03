@@ -9,7 +9,9 @@ export default function LeftSidebar({
   onSelectSession, 
   onDeleteSession, 
   onRenameSession,
-  width = 300
+  width = 300,
+  user = null,
+  onSignOut
 }) {
   const [editingId, setEditingId] = useState(null);
   const [editTitle, setEditTitle] = useState("");
@@ -91,13 +93,20 @@ export default function LeftSidebar({
         </div>
       </div>
 
-      {/* Future Account & Memory Section */}
-      <div className="profile-placeholder">
-        <div className="profile-avatar">M</div>
-        <div className="profile-info">
-          <span className="profile-name">My Account</span>
-          <span className="profile-role">Pro Tier</span>
-        </div>
+      {/* User Account */}
+      <div className="sidebar-section" style={{ marginTop: 'auto', paddingTop: '8px' }}>
+        {user && (
+          <div className="user-badge">
+            <span className="user-email" title={user.email}>{user.email}</span>
+            <button
+              className="btn-signout"
+              onClick={onSignOut}
+              title="Sign out"
+            >
+              Sign out
+            </button>
+          </div>
+        )}
       </div>
     </aside>
   );
