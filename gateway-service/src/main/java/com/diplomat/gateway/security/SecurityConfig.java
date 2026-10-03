@@ -39,6 +39,8 @@ public class SecurityConfig {
             .authorizeHttpRequests(auth -> auth
                 // Public: auth and health
                 .requestMatchers("/api/v1/auth/**").permitAll()
+                // Spring forwards every handled error to /error; if that needs auth, real 400/404/500s get masked as 401
+                .requestMatchers("/error").permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/v1/chat/health").permitAll()
                 // Everything else requires a valid JWT
                 .anyRequest().authenticated()

@@ -218,7 +218,9 @@ export default function Home() {
         body: JSON.stringify({ prompt: titlePrompt, modelId: "auto", useCache: false }),
       });
       const data = await res.json();
-      if (data.answer && !data.answer.toLowerCase().includes("system error") && !data.answer.toLowerCase().includes("error:")) {
+      // "internal"/"none" means no real model answered (gateway fallback or error text) — not a usable title
+      const answeredByRealModel = !["internal", "none"].includes((data.metrics?.provider || "").toLowerCase());
+      if (answeredByRealModel && data.answer && !data.answer.toLowerCase().includes("system error") && !data.answer.toLowerCase().includes("error:")) {
         let title = data.answer.replace(/["'*`_]/g, "").trim();
         if (title.endsWith(".")) title = title.slice(0, -1);
         await renameSession(sessionId, title);
