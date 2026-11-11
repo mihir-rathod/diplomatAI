@@ -1,13 +1,14 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { apiFetch } from "@/lib/api";
 
 export default function ModelRegistry({ gatewayUrl, refreshKey, onRegistryUpdate }) {
   const [models, setModels] = useState([]);
 
   const fetchRegistry = async () => {
     try {
-      const res = await fetch(`${gatewayUrl}/models/registry`);
+      const res = await apiFetch(`${gatewayUrl}/models/registry`);
       const data = await res.json();
       setModels(data || []);
     } catch {
@@ -22,7 +23,7 @@ export default function ModelRegistry({ gatewayUrl, refreshKey, onRegistryUpdate
   const handleDelete = async (modelId, modelName) => {
     if (!window.confirm(`Remove "${modelName || modelId}" from the registry? You will need to re-register to use it again.`)) return;
     try {
-      await fetch(`${gatewayUrl}/models/registry/${modelId}`, { method: "DELETE" });
+      await apiFetch(`${gatewayUrl}/models/registry/${modelId}`, { method: "DELETE" });
       fetchRegistry();
       if (onRegistryUpdate) onRegistryUpdate();
     } catch (err) {

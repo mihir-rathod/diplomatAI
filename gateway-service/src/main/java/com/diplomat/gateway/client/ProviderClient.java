@@ -1,11 +1,12 @@
 package com.diplomat.gateway.client;
 
+import com.diplomat.gateway.config.ActiveModelRegistry;
 import com.diplomat.gateway.config.ModelRegistryProperties.ModelConfig;
-import com.diplomat.gateway.config.ModelRegistryProperties;
 import com.diplomat.gateway.model.ChatMessage;
 import com.diplomat.gateway.service.RouterService;
 import io.github.resilience4j.ratelimiter.annotation.RateLimiter;
-import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
+import io.github.resilience4j.circuitbreaker.CircuitBreaker;
+import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestTemplate;
@@ -29,19 +30,35 @@ public class ProviderClient {
     private static final Logger log = LoggerFactory.getLogger(ProviderClient.class);
 
     private final RestTemplate restTemplate;
-    private final ModelRegistryProperties registryProperties;
+    private final ActiveModelRegistry activeModelRegistry;
     private final RouterService routerService;
+    private final CircuitBreakerRegistry circuitBreakerRegistry;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
-    public ProviderClient(RestTemplate restTemplate, ModelRegistryProperties registryProperties, @Lazy RouterService routerService) {
+    public ProviderClient(RestTemplate restTemplate, ActiveModelRegistry activeModelRegistry,
+                          @Lazy RouterService routerService, CircuitBreakerRegistry circuitBreakerRegistry) {
         this.restTemplate = restTemplate;
-        this.registryProperties = registryProperties;
+        this.activeModelRegistry = activeModelRegistry;
         this.routerService = routerService;
+        this.circuitBreakerRegistry = circuitBreakerRegistry;
     }
 
     @RateLimiter(name = "llmRateLimiter", fallbackMethod = "fallbackToBackupModel")
-    @CircuitBreaker(name = "llmCircuitBreaker", fallbackMethod = "fallbackToBackupModel")
     public ModelCallResult callModel(List<ChatMessage> messages, ModelConfig config) {
+        // The internal provider is the terminal fallback and must never be blocked by a breaker
+        if (config.getProvider().equalsIgnoreCase("internal")) {
+            return doCall(messages, config);
+        }
+
+        // One breaker per (user, model): a failing model only blocks itself for that user, not every
+        // model and every account. An open breaker throws, which the rate-limiter fallback turns into
+        // a reroute to the next best model.
+        CircuitBreaker breaker = circuitBreakerRegistry.circuitBreaker(
+                "user" + activeModelRegistry.getUserId() + ":" + config.getId(), "llm");
+        return breaker.executeSupplier(() -> doCall(messages, config));
+    }
+
+    private ModelCallResult doCall(List<ChatMessage> messages, ModelConfig config) {
         // Internal provider is the terminal fallback
         if (config.getProvider().equalsIgnoreCase("internal")) {
             return ModelCallResult.success(
@@ -199,7 +216,7 @@ public class ProviderClient {
                     originalConfig.getId());
         }
 
-        ModelConfig fallbackConfig = registryProperties.getModelsAsMap().get(fallbackId);
+        ModelConfig fallbackConfig = activeModelRegistry.getModels().get(fallbackId);
         if (fallbackConfig == null) {
             return ModelCallResult.error(
                     "Error: Defined fallback model '" + fallbackId + "' not found in registry.",
