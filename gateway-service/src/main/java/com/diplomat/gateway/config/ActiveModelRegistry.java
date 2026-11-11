@@ -23,6 +23,15 @@ import java.util.Map;
 public class ActiveModelRegistry {
 
     private Map<String, ModelConfig> models = Map.of();
+    private Long userId;
+
+    public void setUserId(Long userId) {
+        this.userId = userId;
+    }
+
+    public Long getUserId() {
+        return userId;
+    }
 
     public void setModels(Map<String, ModelConfig> models) {
         this.models = models != null ? models : Map.of();

@@ -29,6 +29,7 @@ import org.springframework.web.server.ResponseStatusException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -36,6 +37,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.concurrent.TimeUnit;
+import java.util.regex.Pattern;
 
 @RestController
 @RequestMapping("/api/v1/chat")
@@ -114,9 +116,11 @@ public class GatewayController {
         return available;
     }
 
+    // Clears only the caller's own cache entries; other accounts' cached answers are untouched
     @DeleteMapping("/cache")
-    public ResponseEntity<Map<String, Object>> clearCache() {
-        Set<String> keys = redisTemplate.keys("prompt:*");
+    public ResponseEntity<Map<String, Object>> clearCache(Authentication auth) {
+        User user = currentUser(auth);
+        Set<String> keys = redisTemplate.keys("prompt:" + user.getId() + ":*");
         long deleted = 0;
         if (keys != null && !keys.isEmpty()) {
             deleted = keys.size();
@@ -215,72 +219,77 @@ public class GatewayController {
         return ResponseEntity.ok(result);
     }
 
+    private static final int MAX_SEMANTIC_CANDIDATES = 200;
+    private static final Pattern CACHE_SAFE_MODEL = Pattern.compile("[\\w./:@-]+");
+
+    /**
+     * Cache entries are scoped to the user and the model the user asked for ("auto" or a model id),
+     * so one account can never be served another account's answer, and a pinned model is never
+     * answered with a different model's cached reply. Returns null when the model id has characters
+     * that are unsafe in a Redis key pattern, which disables the cache for that request.
+     */
+    private String cacheKeyPrefix(User user, String requestedModelId) {
+        String model = (requestedModelId == null || requestedModelId.isBlank() || requestedModelId.equalsIgnoreCase("auto"))
+                ? "auto" : requestedModelId.trim();
+        if (!CACHE_SAFE_MODEL.matcher(model).matches()) return null;
+        return "prompt:" + user.getId() + ":" + model + ":";
+    }
+
+    private ResponseEntity<GatewayResponse> cacheHitResponse(String answer, String modelLabel, Object similarity, long startTime) {
+        Map<String, Object> metrics = new HashMap<>();
+        metrics.put("cache_hit", true);
+        metrics.put("model_routed", modelLabel);
+        metrics.put("fallback_triggered", false);
+        if (similarity != null) {
+            metrics.put("semantic_similarity", similarity);
+        }
+        metrics.put("prompt_tokens", 0);
+        metrics.put("completion_tokens", 0);
+        metrics.put("total_tokens", 0);
+        metrics.put("provider", "cache");
+        metrics.put("latency_ms", System.currentTimeMillis() - startTime);
+
+        GatewayResponse response = new GatewayResponse();
+        response.setAnswer(answer);
+        response.setMetrics(metrics);
+        return ResponseEntity.ok(response);
+    }
+
+    private void persistTurn(User user, Long sessionId, String prompt, String answer,
+                             String model, String provider, boolean cachedHit) {
+        if (sessionId == null) return;
+        try {
+            sessionRepository.findById(sessionId).ifPresent(session -> {
+                if (!session.getUser().getId().equals(user.getId())) return;
+
+                messageRepository.save(new Message(session, "user", prompt));
+
+                Message assistantMessage = new Message(session, "assistant", answer);
+                assistantMessage.setModel(model);
+                assistantMessage.setProvider(provider);
+                assistantMessage.setCachedHit(cachedHit);
+                messageRepository.save(assistantMessage);
+
+                session.setUpdatedAt(Instant.now());
+                sessionRepository.save(session);
+            });
+        } catch (Exception e) {
+            log.warn("Failed to persist messages to session {}: {}", sessionId, e.getMessage());
+        }
+    }
+
     @PostMapping
     public ResponseEntity<GatewayResponse> processPrompt(@RequestBody GatewayRequest request,
                                                           Authentication auth) {
         User user = currentUser(auth);
         Map<String, ModelConfig> availableModels = buildAvailableModels(user);
         activeModelRegistry.setModels(availableModels);
+        activeModelRegistry.setUserId(user.getId());
 
         String prompt = request.getPrompt();
-        GatewayResponse response = new GatewayResponse();
-        Map<String, Object> metrics = new HashMap<>();
-
         long startTime = System.currentTimeMillis();
 
-        // ── 1. Check Redis for a cached response before routing ──
-        if (request.isUseCache()) {
-            String cachedAnswer = redisTemplate.opsForValue().get("prompt:" + prompt);
-            if (cachedAnswer != null) {
-                response.setAnswer(cachedAnswer);
-
-                metrics.put("cache_hit", true);
-                metrics.put("model_routed", "cache");
-                metrics.put("fallback_triggered", false);
-                metrics.put("prompt_tokens", 0);
-                metrics.put("completion_tokens", 0);
-                metrics.put("total_tokens", 0);
-                metrics.put("provider", "cache");
-                metrics.put("latency_ms", System.currentTimeMillis() - startTime);
-
-                response.setMetrics(metrics);
-                return ResponseEntity.ok(response);
-            }
-
-            // Exact cache miss — try Semantic Caching via QC service
-            Set<String> keys = redisTemplate.keys("prompt:*");
-            if (keys != null && !keys.isEmpty()) {
-                Set<String> cachedPrompts = keys.stream()
-                        .map(k -> k.substring(7)) // remove "prompt:"
-                        .collect(Collectors.toSet());
-
-                Map<String, Object> semanticMatch = qualityCheckClient.checkSemanticCache(prompt, cachedPrompts);
-                if (semanticMatch.containsKey("matched") && (boolean) semanticMatch.get("matched")) {
-                    String matchedPrompt = (String) semanticMatch.get("matched_prompt");
-                    String semanticCachedAnswer = redisTemplate.opsForValue().get("prompt:" + matchedPrompt);
-
-                    if (semanticCachedAnswer != null) {
-                        response.setAnswer(semanticCachedAnswer);
-
-                        metrics.put("cache_hit", true);
-                        metrics.put("model_routed", "semantic-cache");
-                        metrics.put("fallback_triggered", false);
-                        metrics.put("semantic_similarity", semanticMatch.get("similarity"));
-                        metrics.put("prompt_tokens", 0);
-                        metrics.put("completion_tokens", 0);
-                        metrics.put("total_tokens", 0);
-                        metrics.put("provider", "cache");
-                        metrics.put("latency_ms", System.currentTimeMillis() - startTime);
-
-                        response.setMetrics(metrics);
-                        return ResponseEntity.ok(response);
-                    }
-                }
-            }
-        }
-
-        // ── 2. Full cache miss — build messages and route to the best model ──
-        // Build conversation context: prefer messages[] from request, fallback to wrapping prompt
+        // Conversation context: prefer messages[] from the request, fall back to wrapping the prompt
         List<ChatMessage> conversationMessages;
         if (request.getMessages() != null && !request.getMessages().isEmpty()) {
             conversationMessages = request.getMessages();
@@ -289,15 +298,46 @@ public class GatewayController {
             conversationMessages.add(new ChatMessage("user", prompt));
         }
 
-        String selectedModelId = request.getModelId();
-        
-        if (selectedModelId == null || selectedModelId.trim().isEmpty() || selectedModelId.equalsIgnoreCase("auto")) {
-            selectedModelId = routerService.routePrompt(prompt);
+        // ── 1. Cache lookup ──
+        // Only a standalone first-turn prompt is cacheable. A follow-up ("explain more") only has
+        // meaning given the earlier turns, so it is neither read from nor written to the cache.
+        String cachePrefix = cacheKeyPrefix(user, request.getModelId());
+        boolean cacheable = cachePrefix != null && conversationMessages.size() <= 1;
+
+        if (cacheable && request.isUseCache()) {
+            String cachedAnswer = redisTemplate.opsForValue().get(cachePrefix + prompt);
+            if (cachedAnswer != null) {
+                persistTurn(user, request.getSessionId(), prompt, cachedAnswer, "cache", "cache", true);
+                return cacheHitResponse(cachedAnswer, "cache", null, startTime);
+            }
+
+            // Exact miss — try semantic matching against this user's own cached prompts
+            Set<String> keys = redisTemplate.keys(cachePrefix + "*");
+            if (keys != null && !keys.isEmpty()) {
+                Set<String> cachedPrompts = keys.stream()
+                        .map(k -> k.substring(cachePrefix.length()))
+                        .limit(MAX_SEMANTIC_CANDIDATES)
+                        .collect(Collectors.toSet());
+
+                Map<String, Object> semanticMatch = qualityCheckClient.checkSemanticCache(prompt, cachedPrompts);
+                if (semanticMatch.containsKey("matched") && (boolean) semanticMatch.get("matched")) {
+                    String matchedPrompt = (String) semanticMatch.get("matched_prompt");
+                    String semanticCachedAnswer = redisTemplate.opsForValue().get(cachePrefix + matchedPrompt);
+
+                    if (semanticCachedAnswer != null) {
+                        persistTurn(user, request.getSessionId(), prompt, semanticCachedAnswer, "semantic-cache", "cache", true);
+                        return cacheHitResponse(semanticCachedAnswer, "semantic-cache",
+                                semanticMatch.get("similarity"), startTime);
+                    }
+                }
+            }
         }
 
-        ModelConfig config = availableModels.get(selectedModelId);
-        if (config == null) {
-            config = availableModels.get("default");
+        // ── 2. Cache miss — route to the best model ──
+        String selectedModelId = request.getModelId();
+
+        if (selectedModelId == null || selectedModelId.trim().isEmpty() || selectedModelId.equalsIgnoreCase("auto")) {
+            selectedModelId = routerService.routePrompt(prompt);
         }
 
         // ── 3. Call the model with seamless fallback loop ──
@@ -314,7 +354,7 @@ public class GatewayController {
 
             try {
                 result = providerClient.callModel(conversationMessages, currentConfig);
-                
+
                 // If it returned an error (e.g. from internal fallback circuit breaker), treat as failure
                 if (result.getAnswer() != null && result.getAnswer().startsWith("Error:")) {
                     throw new RuntimeException(result.getAnswer());
@@ -325,17 +365,17 @@ public class GatewayController {
                     result.setWasRerouted(true);
                     result.setOriginalModelId(selectedModelId);
                 }
-                
+
                 // Success! Break out of loop.
                 break;
-                
+
             } catch (Exception e) {
                 log.warn("Model '{}' failed: {}", currentModelId, e.getMessage());
                 failedModels.add(currentModelId);
-                
+
                 // Get next best model avoiding all failed ones so far
                 String nextModelId = routerService.getNextBestModel(failedModels, prompt);
-                
+
                 // If we ran out of fallbacks, return final error
                 if ("default".equals(nextModelId) || failedModels.contains(nextModelId)) {
                     result = ModelCallResult.error(
@@ -343,45 +383,28 @@ public class GatewayController {
                         selectedModelId);
                     break;
                 }
-                
+
                 currentModelId = nextModelId;
                 isFirstAttempt = false;
             }
         }
 
-        // ── 4. Cache the response ──
+        // ── 4. Cache the response (never errors, never the gateway's own "no models" fallback text) ──
         boolean isError = result.getAnswer().startsWith("System Error") || result.getAnswer().startsWith("Error:");
-        if (!isError) {
-            redisTemplate.opsForValue().set("prompt:" + prompt, result.getAnswer(), 1, TimeUnit.HOURS);
+        boolean fromRealModel = !"internal".equalsIgnoreCase(result.getProvider());
+        if (cacheable && !isError && fromRealModel) {
+            redisTemplate.opsForValue().set(cachePrefix + prompt, result.getAnswer(), 1, TimeUnit.HOURS);
         }
 
-        // ── 5. Persist messages to Postgres (if sessionId provided and not an error) ──
-        final ModelCallResult finalResult = result; // capture for lambda (result is not effectively final)
-        if (!isError && request.getSessionId() != null) {
-            try {
-                sessionRepository.findById(request.getSessionId()).ifPresent(session -> {
-                    if (session.getUser().getId().equals(user.getId())) {
-                        // Persist the user's message
-                        Message userMessage = new Message(session, "user", prompt);
-                        messageRepository.save(userMessage);
-
-                        // Persist the assistant's reply
-                        Message assistantMessage = new Message(session, "assistant", finalResult.getAnswer());
-                        assistantMessage.setModel(finalResult.getActualModelId());
-                        assistantMessage.setProvider(finalResult.getProvider());
-                        messageRepository.save(assistantMessage);
-
-                        // Touch updatedAt on the session
-                        session.setUpdatedAt(java.time.Instant.now());
-                        sessionRepository.save(session);
-                    }
-                });
-            } catch (Exception e) {
-                log.warn("Failed to persist messages to session {}: {}", request.getSessionId(), e.getMessage());
-            }
+        // ── 5. Persist the turn to Postgres (if a sessionId was provided and the call did not fail) ──
+        if (!isError) {
+            persistTurn(user, request.getSessionId(), prompt, result.getAnswer(),
+                    result.getActualModelId(), result.getProvider(), false);
         }
 
         // ── 6. Build response metrics ──
+        GatewayResponse response = new GatewayResponse();
+        Map<String, Object> metrics = new HashMap<>();
         response.setAnswer(result.getAnswer());
 
         metrics.put("cache_hit", false);
