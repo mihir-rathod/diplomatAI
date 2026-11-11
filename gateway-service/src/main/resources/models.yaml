@@ -1,0 +1,10 @@
+gateway:
+  models:
+    - id: default
+      name: "Gateway Fallback"
+      provider: internal
+      endpoint: "internal"
+      timeoutMs: 5000
+      capabilities:
+        - fallback
+      fallbackId: none

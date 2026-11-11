@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   redis:
     image: redis:alpine
@@ -9,11 +7,95 @@ services:
     volumes:
       - redis_data:/data
     command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    networks:
+      - diplomat-net
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: diplomat-postgres
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_DB=diplomatai
+      - POSTGRES_USER=diplomat
+      - POSTGRES_PASSWORD=diplomat_secret
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U diplomat -d diplomatai"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - diplomat-net
+
+  gateway:
+    build: ./gateway-service
+    container_name: diplomat-gateway
+    ports:
+      - "8080:8080"
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    environment:
+      - SPRING_DATA_REDIS_HOST=redis
+      - SPRING_DATA_REDIS_PORT=6379
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/diplomatai
+      - SPRING_DATASOURCE_USERNAME=diplomat
+      - SPRING_DATASOURCE_PASSWORD=diplomat_secret
+      - SPRING_JPA_HIBERNATE_DDL_AUTO=update
+      - QC_SERVICE_URL=http://quality-check:8000
+      - JWT_SECRET=${JWT_SECRET:-diplomatai_jwt_secret_key_change_in_production_min32chars}
+      - API_KEY_ENCRYPTION_SECRET=${API_KEY_ENCRYPTION_SECRET:-diplomatai_api_key_encryption_secret_change_in_production}
+      - LLM_RATE_LIMIT_PER_MINUTE=${LLM_RATE_LIMIT_PER_MINUTE:-60}
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/api/v1/chat/health || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    networks:
+      - diplomat-net
+
+  quality-check:
+    build: ./quality-check-service
+    container_name: diplomat-qc
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/health')\" || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    networks:
+      - diplomat-net
+
+  dashboard:
+    build: ./dashboard
+    container_name: diplomat-dashboard
+    ports:
+      - "3000:3000"
+    depends_on:
+      gateway:
+        condition: service_healthy
+    environment:
+      - NEXT_PUBLIC_GATEWAY_URL=http://gateway:8080/api/v1/chat
+      - NEXT_PUBLIC_AUTH_URL=http://gateway:8080/api/v1/auth
+      - NEXT_PUBLIC_SESSIONS_URL=http://gateway:8080/api/v1/sessions
     networks:
       - diplomat-net
 
 volumes:
   redis_data:
+  postgres_data:
 
 networks:
   diplomat-net:
